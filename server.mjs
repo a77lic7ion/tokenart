@@ -1,22 +1,64 @@
 /*
  * Token City — static server + collect API
  * Serves the procedural city files directly, no build step.
- * GET /api/collect -> run collect-usage.py -> return usage.json
+ * GET/POST /api/collect -> run collect-usage.py -> return usage.json
+ *
+ * Listens on every real address this machine has (loopback + LAN + Tailscale) on ONE port,
+ * so the same URL works from this desktop, from a phone on the LAN, and from a phone on
+ * Tailscale. It still never binds 0.0.0.0: each address is bound explicitly, so a new
+ * interface that appears later is not silently exposed.
+ *
+ * Override the whole list with HOSTS=192.168.1.79,100.74.139.124
  */
 import http from 'node:http';
-import { existsSync } from 'node:fs';
+import os from 'node:os';
+import { existsSync, readFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
+import { homedir } from 'node:os';
 import { extname, join, normalize } from 'node:path';
 import { spawn } from 'node:child_process';
 
 const ROOT = process.cwd();
 const PORT = Number(process.env.PORT) || 8221;
-// Default to loopback: never 0.0.0.0, and never assume someone else's LAN address.
-// Set HOST= to your own LAN IP when another device (a phone) should reach it.
-const HOST = process.env.HOST || '127.0.0.1';
+
+// Every IPv4 address this machine actually holds. Explicit, never 0.0.0.0.
+function localAddresses() {
+  const found = [];
+  for (const addrs of Object.values(os.networkInterfaces())) {
+    for (const a of addrs || []) {
+      if (a.family === 'IPv4' && !a.internal) found.push(a.address);
+    }
+  }
+  return [...new Set(found)];
+}
+
+const HOSTS = (process.env.HOSTS
+  ? process.env.HOSTS.split(',')
+  : ['127.0.0.1', ...localAddresses()]
+).map((s) => s.trim()).filter(Boolean);
+
 // Don't hardcode the interpreter: /usr/bin/python3 is not guaranteed to exist or to be the
 // python that has this project's stdlib. Resolve in order, and allow an override.
 const PYTHON = process.env.CITY_PYTHON || (existsSync('/usr/bin/python3') ? '/usr/bin/python3' : 'python3');
+
+// The collector reads provider keys from the environment. Loading them here means `node
+// server.mjs` works on its own, without having to source anything first. Values are only
+// ever handed to the child process — never logged, never returned over HTTP.
+function loadEnvFile(path) {
+  const out = {};
+  try {
+    for (const line of readFileSync(path, 'utf8').split('\n')) {
+      const m = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/.exec(line);
+      if (!m) continue;
+      let v = m[2].trim();
+      if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) v = v.slice(1, -1);
+      out[m[1]] = v;
+    }
+  } catch { /* no env file, fine */ }
+  return out;
+}
+const FILE_ENV = loadEnvFile(join(homedir(), '.hermes', '.env'));
+const CHILD_ENV = { ...FILE_ENV, ...process.env };
 
 const TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -36,7 +78,7 @@ function apiJson(res, code, payload) {
 
 function runCollect() {
   return new Promise((resolve, reject) => {
-    const p = spawn(PYTHON, ['collect-usage.py'], { cwd: ROOT, timeout: 60000 });
+    const p = spawn(PYTHON, ['collect-usage.py'], { cwd: ROOT, timeout: 180000, env: CHILD_ENV });
     let stdout = '';
     let stderr = '';
     p.stdout.on('data', (d) => { stdout += d.toString(); });
@@ -48,7 +90,7 @@ function runCollect() {
   });
 }
 
-const server = http.createServer(async (req, res) => {
+const handler = async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
 
   if (url.pathname === '/api/collect' && (req.method === 'GET' || req.method === 'POST')) {
@@ -69,6 +111,11 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (url.pathname === '/api/health') {
+    apiJson(res, 200, { ok: true, port: PORT, hosts: HOSTS });
+    return;
+  }
+
   try {
     let path = decodeURIComponent(url.pathname);
     if (path === '/') path = '/procedural-city-demo.html';
@@ -86,12 +133,22 @@ const server = http.createServer(async (req, res) => {
   } catch {
     res.writeHead(404).end('Not Found');
   }
-});
+};
 
-server.listen(PORT, HOST, () => {
-  console.log(`Token City point-cloud + API on http://${HOST}:${PORT}`);
-  if (HOST === '127.0.0.1' || HOST === 'localhost') {
-    console.log("Loopback only — this browser can reach it, your phone cannot. For the phone:");
-    console.log(`  HOST=<this machine's LAN IP> node server.mjs`);
-  }
-});
+// One listener per address, all sharing the handler. A failure on one address (Tailscale
+// down, interface gone) must not take the others with it.
+const listening = [];
+for (const host of HOSTS) {
+  const s = http.createServer(handler);
+  s.on('error', (e) => {
+    console.error(`  ${host}:${PORT} — could not bind (${e.code})`);
+  });
+  s.listen(PORT, host, () => {
+    listening.push(host);
+    console.log(`  http://${host}:${PORT}/procedural-city-demo.html`);
+  });
+}
+
+process.on('SIGTERM', () => process.exit(0));
+process.on('SIGINT', () => process.exit(0));
+console.log(`Token City + collect API — port ${PORT}`);
