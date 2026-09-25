@@ -69,6 +69,7 @@
       <button class="btn" id="replayBtn" title="Replay the build animation (B)">REPLAY</button>
       <button class="btn" id="themeBtn" title="Toggle theme (T)">DARK</button>
       <button class="btn" id="resetBtn" title="Reset the camera (R)">RESET VIEW</button>
+      <label class="btn" title="Import a Stipple Forge template JSON">IMPORT<input type="file" accept=".json" style="display:none" id="importInput" /></label>
     </div>
     <div class="count" id="count">Generating point cloud…</div>
     <div class="collect-status" id="collectStatus"></div>
@@ -416,6 +417,25 @@
       renderer.camera.position.set(...renderer.defaultCamera);
       renderer.controls.target.set(0, 0.5, 0);
       renderer.controls.update();
+    });
+
+    // Import a Stipple Forge template JSON and render it
+    document.getElementById("importInput").addEventListener("change", (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        try {
+          const tmpl = JSON.parse(ev.target.result);
+          if (!tmpl.dots || !Array.isArray(tmpl.dots)) { alert("Invalid template: no dots array"); return; }
+          renderer.setDots(tmpl.dots, tmpl.name || 'Imported');
+          document.title = tmpl.name || 'TokenArt';
+          countEl.textContent = `${tmpl.dots.length.toLocaleString()} dots · ${tmpl.width || '?'}×${tmpl.height || '?'} · edge-biased: ${tmpl.edgeBiased ? 'yes' : 'no'}`;
+          collectStatus.innerHTML = '<span style="color: var(--accent)">✓ Imported: ' + (tmpl.name || 'template') + '</span>';
+        } catch (err) { alert("Failed to parse template: " + err.message); }
+      };
+      reader.readAsText(file);
+      e.target.value = ''; // allow re-importing same file
     });
 
     addEventListener("keydown", (e) => {

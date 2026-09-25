@@ -550,6 +550,21 @@ export function createCityRenderer({
       recomputeFraming();
       rebuild({ animate: true });
     },
+    /** Render flat dot data from a Stipple Forge template */
+    setDots(dots, name) {
+      // dots: [[x, z, r, g, b, size], ...]
+      const points = dots.map(d => ({
+        position: [d[0], 0, d[1]],
+        color: [d[2], d[3], d[4]],
+        size: d[5] || 1.0,
+      }));
+      // Dispose old city mesh
+      if (city) { city.geometry.dispose(); city.material.dispose(); }
+      city = createPointCloud(points, geometry, material);
+      scene.add(city);
+      recomputeFraming();
+      rebuild({ animate: true });
+    },
     setTheme(name) {
       if (!THEMES[name] || name === state.theme) return;
       state.theme = name;
