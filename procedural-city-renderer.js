@@ -577,6 +577,19 @@ export function createCityRenderer({
       }
       pointCount = points.length;
       fullPointCount = points.length;
+      // Frame camera for flat dots: zoom out to see the full spread
+      let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+      for (const d of dots) {
+        if (d[0] < minX) minX = d[0]; if (d[0] > maxX) maxX = d[0];
+        if (d[1] < minZ) minZ = d[1]; if (d[1] > maxZ) maxZ = d[1];
+      }
+      const spreadX = maxX - minX || 1;
+      const spreadZ = maxZ - minZ || 1;
+      const maxSpread = Math.max(spreadX, spreadZ);
+      const dist = Math.max(maxSpread * 1.5, 20);
+      camera.position.set(dist * 0.6, dist * 0.5, dist * 0.6);
+      controls.target.set((minX + maxX) / 2, 0, (minZ + maxZ) / 2);
+      controls.update();
     },
     setTheme(name) {
       if (!THEMES[name] || name === state.theme) return;
