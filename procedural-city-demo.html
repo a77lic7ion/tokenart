@@ -359,7 +359,7 @@
         // On a static host (Vercel, plain file server) there is no collector to call. Say so
         // plainly instead of surfacing a JSON parse error from an HTML 404 page.
         if (!res.ok || !type.includes("application/json")) {
-          throw new Error("no collector on this host — run server.mjs locally to refresh");
+          throw new Error("no collector — run: cd /home/shaun/tokenart && node server.mjs");
         }
         const result = await res.json();
         if (result.ok) {
