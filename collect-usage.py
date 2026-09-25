@@ -111,7 +111,7 @@ def _get_json(url: str, key: str) -> tuple[str, object]:
     req = urllib.request.Request(url, headers={
         "Authorization": f"Bearer {key}",
         "Accept": "application/json",
-        "User-Agent": "city-kit-usage/1.0",
+        "User-Agent": "tokenart-usage/1.0",
     })
     try:
         with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:

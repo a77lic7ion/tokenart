@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="icon" href="./icon.svg" />
+  <title>Deep Space Station</title>
+  <style>
+    :root[data-theme="dark"] {
+      --bg: #06080d;
+      --panel: rgba(8, 12, 18, 0.82);
+      --line: rgba(207, 214, 221, 0.22);
+      --line-strong: rgba(207, 214, 221, 0.5);
+      --text: #cfd6dd;
+      --strong: #ece7dc;
+      --muted: #9aa39e;
+      --faint: #7b827d;
+      --warn: #d2a869;
+      --accent: #6fd6ff;
+    }
+    html, body { margin: 0; min-height: 100%; overflow: hidden; background: var(--bg);
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--text); }
+    #app { position: fixed; inset: 0; }
+    .panel { position: fixed; padding: 13px 15px; border: 1px solid var(--line);
+      background: var(--panel); backdrop-filter: blur(7px); }
+    .hud { top: 20px; left: 22px; max-width: 320px; }
+    .eyebrow { color: var(--accent); font-size: 9px; letter-spacing: .16em; }
+    h1 { margin: 8px 0 4px; font: 600 18px/1.05 ui-sans-serif, system-ui, sans-serif;
+      letter-spacing: -.05em; }
+    p { margin: 0; color: var(--muted); font-size: 10px; line-height: 1.45; }
+    .btns { display: flex; gap: 7px; margin-top: 11px; }
+    .btn { all: unset; cursor: pointer; font-size: 9px; letter-spacing: .1em;
+      color: var(--muted); padding: 4px 9px; border: 1px solid var(--line); }
+    .btn:hover { color: var(--text); border-color: var(--line-strong); }
+    .count { margin-top: 10px; color: var(--strong); font-size: 10px; }
+  </style>
+  <script type="importmap">{ "imports": { "three": "./three.module.js" } }</script>
+</head>
+<body>
+  <main id="app"></main>
+  <section class="panel hud">
+    <div class="eyebrow">SCENE KIT · DEEP SPACE STATION</div>
+    <h1>AUTHOR A SCENE</h1>
+    <p>Template-driven: a hex docking platform, great dome, comms spire, minor domes, a conduit, and a
+      mast array — every structure named, every position authored.</p>
+    <div class="btns">
+      <button class="btn" id="replayBtn" title="Replay build animation (B)">REPLAY</button>
+      <button class="btn" id="pulseBtn" title="Toggle the ripple (P)">PULSE: ON</button>
+      <button class="btn" id="themeBtn" title="Toggle background (T)">BG: DARK</button>
+    </div>
+    <div class="count" id="count">Loading scene…</div>
+  </section>
+
+  <script type="module">
+    import { createSceneRenderer, SCENE_TEMPLATES } from "./scene-kit/scene-template.js";
+    import * as THREE from "./three.module.js";
+
+    const KEY = "deep-space-station";
+    const template = SCENE_TEMPLATES[KEY];
+
+    const renderer = createSceneRenderer({
+      container: document.querySelector("#app"),
+      template,
+      cameraPosition: template.camera,
+    });
+
+    const countEl = document.querySelector("#count");
+    const pulseBtn = document.querySelector("#pulseBtn");
+    const bgBtn = document.querySelector("#themeBtn");
+
+    countEl.textContent =
+      `${renderer.pointCount.toLocaleString()} points · ${template.structures.length} structures · ripple every 15s`;
+
+    document.querySelector("#replayBtn").addEventListener("click", () => {
+      const mesh = renderer.scene.children.find(c => c.geometry?.instanceCount > 0);
+      if (!mesh) return;
+      const full = mesh.geometry;
+      const total = full.instanceCount;
+      full.instanceCount = 0;
+      const start = performance.now();
+      const duration = 5000;
+      const ramp = () => {
+        const t = Math.min(1, (performance.now() - start) / duration);
+        full.instanceCount = Math.round(t * total);
+        if (t < 1) requestAnimationFrame(ramp);
+      };
+      requestAnimationFrame(ramp);
+    });
+
+    let pulsing = renderer.pulsing;
+    pulseBtn.addEventListener("click", () => {
+      pulsing = !pulsing;
+      renderer.setPulse(pulsing);
+      pulseBtn.textContent = pulsing ? "PULSE: ON" : "PULSE: OFF";
+    });
+
+    let bgDark = true;
+    bgBtn.addEventListener("click", () => {
+      bgDark = !bgDark;
+      renderer.scene.background = new THREE.Color(bgDark ? "#06080d" : "#0d0608");
+      bgBtn.textContent = bgDark ? "BG: DARK" : "BG: RUST";
+    });
+
+    addEventListener("keydown", (e) => {
+      if (e.key === "b" || e.key === "B") document.querySelector("#replayBtn").click();
+      if (e.key === "p" || e.key === "P") pulseBtn.click();
+      if (e.key === "t" || e.key === "T") bgBtn.click();
+    });
+  </script>
+</body>
+</html>

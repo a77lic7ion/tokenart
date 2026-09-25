@@ -13,13 +13,22 @@ export const THEMES = {
   light: {
     background: "#f4efe5",
     ground: "#f4efe5",
-    palette: { ink: "#171a1a", softInk: "#394341", soil: "#7b8178", teal: "#5faaa3", amber: "#c49a5e" },
+    // 'ripple' is the colour a dot shifts toward as the travelling wave passes over it.
+    palette: { ink: "#171a1a", softInk: "#394341", soil: "#7b8178", teal: "#5faaa3", amber: "#c49a5e", ripple: "#a9551f" },
   },
   dark: {
     background: "#14171a",
     ground: "#14171a",
-    palette: { ink: "#ece7dc", softInk: "#9aa39e", soil: "#6f7772", teal: "#6fbcb4", amber: "#d2a869" },
+    palette: { ink: "#ece7dc", softInk: "#9aa39e", soil: "#6f7772", teal: "#6fbcb4", amber: "#d2a869", ripple: "#ffd9a0" },
   },
+};
+
+// The travelling ripple: a ring that spreads from the centre of the island once per cycle,
+// lighting whatever it touches. See createDotMaterial() for the wave itself.
+export const RIPPLE = {
+  cycle: 15,      // seconds between ripples
+  travel: 6,      // seconds the wave takes to cross the map
+  strength: 1.15, // how much a dot swells at the wavefront (1.15 = +115%)
 };
 
 export const THEME_NAMES = Object.keys(THEMES);
@@ -69,7 +78,20 @@ function createDotMaterial(resolutionY) {
   return new THREE.ShaderMaterial({
     transparent: true,
     depthWrite: false,
-    uniforms: { uResolutionY: { value: resolutionY } },
+    uniforms: {
+      uResolutionY: { value: resolutionY },
+      // One clock drives every animated thing in the scene.
+      uTime: { value: 0 },
+      // Master motion switch: 1 normally, 0 when motion is not wanted (system asking for
+      // reduced motion, or setPulse(false)).
+      uPulse: { value: 1 },
+      // Ripple shaped by the island size, so it always crosses the whole map.
+      uRippleRadius: { value: 26 },
+      uRippleCycle: { value: RIPPLE.cycle },
+      uRippleTravel: { value: RIPPLE.travel },
+      uRippleStrength: { value: RIPPLE.strength },
+      uRippleColor: { value: new THREE.Color("#a9551f") },
+    },
     vertexShader: `
       attribute vec3 instanceOffset;
       attribute vec3 instanceColor;
@@ -77,24 +99,52 @@ function createDotMaterial(resolutionY) {
       // NOTE: do not redeclare uv - ShaderMaterial's vertex prefix already provides it.
       varying vec3 vColor;
       varying vec2 vUv;
+      varying float vGlow;
       uniform float uResolutionY;
+      uniform float uTime;
+      uniform float uPulse;
+      uniform float uRippleRadius;
+      uniform float uRippleCycle;
+      uniform float uRippleTravel;
+      uniform float uRippleStrength;
+      uniform vec3 uRippleColor;
       void main() {
         vec4 viewPosition = modelViewMatrix * vec4(instanceOffset, 1.0);
         // CSS-pixel dot sizing: constant on-screen size at any depth & any devicePixelRatio.
         float worldPerPixel = 2.0 * abs(viewPosition.z) * tan(radians(16.0)) / uResolutionY;
-        viewPosition.xy += position.xy * instanceSize * worldPerPixel;
+
+        // ---- the ripple ----
+        // A single ring spreading out from the centre of the island. It runs for uRippleTravel
+        // seconds, then the map rests until the next cycle.
+        float t = mod(uTime, uRippleCycle);
+        float progress = clamp(t / uRippleTravel, 0.0, 1.0);
+        float radius = progress * uRippleRadius;
+        float distanceFromCentre = length(instanceOffset.xz);
+        float band = max(1.6, uRippleRadius * 0.085);
+        float offset = (distanceFromCentre - radius) / band;
+        float ring = exp(-offset * offset);
+        // The wave only exists while it is travelling, and loses energy as it spreads.
+        float alive = step(t, uRippleTravel);
+        float glow = ring * alive * uPulse * (1.0 - 0.55 * progress);
+
+        // Dots swell and warm up as the wavefront reaches them.
+        float swell = 1.0 + glow * uRippleStrength;
+        viewPosition.xy += position.xy * instanceSize * swell * worldPerPixel;
         gl_Position = projectionMatrix * viewPosition;
-        vColor = instanceColor;
+        vColor = mix(instanceColor, uRippleColor, clamp(glow, 0.0, 1.0) * 0.9);
         vUv = uv;
+        vGlow = glow;
       }
     `,
     fragmentShader: `
       varying vec3 vColor;
       varying vec2 vUv;
+      varying float vGlow;
       void main() {
         vec2 centered = vUv - 0.5;
         if (dot(centered, centered) > 0.25) discard;
-        gl_FragColor = vec4(vColor, 0.9);
+        // A lit dot is also fully opaque, so the wave reads as light rather than a tint.
+        gl_FragColor = vec4(vColor, 0.9 + 0.1 * clamp(vGlow, 0.0, 1.0));
       }
     `,
   });
@@ -350,6 +400,13 @@ export function createCityRenderer({
   const geometry = createDotGeometry();
   const material = createDotMaterial(innerHeight);
 
+  // The constant breathing is on by default, but never against the system's wishes: if the user
+  // has asked for reduced motion, the wave is simply left at zero.
+  const reduceMotion =
+    typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+  let pulsing = !reduceMotion;
+  material.uniforms.uPulse.value = pulsing ? 1 : 0;
+
   // A subtle ground plane makes the point cloud feel placed on terrain instead of floating.
   const ground = new THREE.Mesh(
     new THREE.PlaneGeometry(cityData.config.size + 3, cityData.config.size + 3),
@@ -374,6 +431,11 @@ export function createCityRenderer({
     const definition = THEMES[state.theme];
     scene.background = new THREE.Color(definition.background);
     ground.material.color = new THREE.Color(definition.ground);
+
+    // Size the ripple to the island so it always sweeps the whole map, and re-tint it with the
+    // theme — a wave has to read as light on cream ground and on charcoal.
+    material.uniforms.uRippleRadius.value = (cityData.config?.size ?? 34) * 0.8;
+    material.uniforms.uRippleColor.value.copy(pal.ripple);
 
     const points = [];
     const counts = {};
@@ -451,6 +513,8 @@ export function createCityRenderer({
       city.geometry.instanceCount = revealedCount;
       if (t >= 1) building = false;
     }
+    // Drive the breathing clock. Kept here so every animated thing shares one time source.
+    if (pulsing) material.uniforms.uTime.value = performance.now() / 1000;
     controls.update();
     renderer.render(scene, camera);
   };
@@ -497,6 +561,15 @@ export function createCityRenderer({
       rebuild();
     },
     triggerBuild,
+    /**
+     * Turn the travelling ripple on or off. It is on unless the system asked for reduced
+     * motion. Exposed so a UI control can switch it, and so stills can be captured frozen.
+     */
+    setPulse(on) {
+      pulsing = !!on;
+      material.uniforms.uPulse.value = pulsing ? 1 : 0;
+    },
+    get pulsing() { return pulsing; },
     dispose() {
       cancelAnimationFrame(raf);
       removeEventListener("resize", resize);

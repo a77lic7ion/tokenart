@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>image-to-dots</title>
+  <style>
+    :root[data-theme="dark"] { --bg: #06080d; --text: #cfd6dd; --muted: #9aa39e; --accent: #6fd6ff; --panel: rgba(8,12,18,.82); --line: rgba(207,214,221,.22); }
+    html, body { margin: 0; min-height: 100%; overflow: hidden; background: var(--bg);
+      font-family: ui-monospace, monospace; color: var(--text); }
+    #app { position: fixed; inset: 0; }
+    .panel { position: fixed; padding: 13px 15px; border: 1px solid var(--line); background: var(--panel); }
+    .hud { top: 20px; left: 22px; max-width: 320px; }
+    .eyebrow { color: var(--accent); font-size: 9px; letter-spacing: .16em; }
+    h1 { margin: 8px 0 4px; font: 600 18px/1.05 ui-sans-serif, sans-serif; letter-spacing: -.05em; }
+    p { margin: 0; color: var(--muted); font-size: 10px; line-height: 1.45; }
+    .count { margin-top: 10px; color: var(--text); font-size: 10px; }
+  </style>
+  <script type="importmap">{ "imports": { "three": "./three.module.js" } }</script>
+</head>
+<body>
+  <main id="app"></main>
+  <section class="panel hud">
+    <div class="eyebrow">SCENE KIT · IMAGE TO DOTS</div>
+    <h1>PIXEL DOT IMAGE TRACER</h1>
+    <p>Drops an image, traces it as a point cloud. Dots cluster on ink and edges — sparse where the image is blank.</p>
+    <div class="count" id="count">Loading…</div>
+  </section>
+
+  <script type="module">
+    import { imageToPoints } from "./scene-kit/image-to-dots.js";
+    import * as THREE from "./three.module.js";
+    import { OrbitControls } from "./OrbitControls.js";
+
+    // --- config ---
+    const IMG = "./scene-kit/sample-city.jpg";
+    const MODE = "trace";
+    const DENSITY = 0.7;
+    const EDGE_WEIGHT = 2.0;
+    const INVERT = false;
+    const MAX_DIM = 28;
+
+    // --- render the points (reusing the same locked dot material) ---
+    const container = document.querySelector("#app");
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color("#06080d");
+
+    const camera = new THREE.PerspectiveCamera(30, innerWidth/innerHeight, 0.1, 600);
+    camera.position.set(0, 22, 30);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    renderer.setSize(innerWidth, innerHeight);
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    container.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.target.set(0, 0, 0);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.07;
+
+    const amb = new THREE.AmbientLight(0xffffff, 0.1);
+    scene.add(amb);
+
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => {
+      const points = imageToPoints(img, { mode: MODE, density: DENSITY, edgeWeight: EDGE_WEIGHT, invert: INVERT, maxDimension: MAX_DIM });
+      document.querySelector("#count").textContent = `${points.length.toLocaleString()} dots from ${img.naturalWidth}×${img.naturalHeight}`;
+
+      const geom = new THREE.InstancedBufferGeometry();
+      geom.setAttribute("position", new THREE.Float32BufferAttribute([
+        -0.5,-0.5,0, 0.5,-0.5,0, 0.5,0.5,0, -0.5,0.5,0,
+      ], 3));
+      geom.setAttribute("uv", new THREE.Float32BufferAttribute([0,0, 1,0, 1,1, 0,1], 2));
+      geom.setIndex([0,1,2, 0,2,3]);
+
+      const mat = new THREE.ShaderMaterial({
+        transparent: true,
+        depthWrite: false,
+        uniforms: { uResolutionY: { value: innerHeight } },
+        vertexShader: `
+          attribute vec3 instanceOffset;
+          attribute vec3 instanceColor;
+          attribute float instanceSize;
+          varying vec3 vColor; varying vec2 vUv;
+          uniform float uResolutionY;
+          void main() {
+            vec4 vp = modelViewMatrix * vec4(instanceOffset, 1.0);
+            float wpp = 2.0 * abs(vp.z) * tan(radians(16.0)) / uResolutionY;
+            vp.xy += position.xy * instanceSize * wpp;
+            gl_Position = projectionMatrix * vp;
+            vColor = instanceColor; vUv = uv;
+          }
+        `,
+        fragmentShader: `
+          varying vec3 vColor; varying vec2 vUv;
+          void main() {
+            vec2 c = vUv - 0.5;
+            if (dot(c,c) > 0.25) discard;
+            gl_FragColor = vec4(vColor, 0.92);
+          }
+        `,
+      });
+
+      const off = new Float32Array(points.length * 3);
+      const col = new Float32Array(points.length * 3);
+      const siz = new Float32Array(points.length);
+      points.forEach((p,i) => { off.set(p.position, i*3); col.set(p.color, i*3); siz[i] = p.size; });
+      geom.instanceCount = points.length;
+      geom.setAttribute("instanceOffset", new THREE.InstancedBufferAttribute(off, 3));
+      geom.setAttribute("instanceColor", new THREE.InstancedBufferAttribute(col, 3));
+      geom.setAttribute("instanceSize", new THREE.InstancedBufferAttribute(siz, 1));
+      const mesh = new THREE.Mesh(geom, mat);
+      scene.add(mesh);
+
+      window.__camera = camera;
+      window.__renderer = renderer;
+      window.__scene = scene;
+
+      // ground grid to show scale
+      const grid = new THREE.GridHelper(40, 20, 0x1a1f25, 0x0d1014);
+      grid.position.y = -0.05;
+      scene.add(grid);
+    };
+    img.src = IMG;
+
+    addEventListener("resize", () => {
+      camera.aspect = innerWidth/innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(innerWidth, innerHeight);
+    });
+
+    let raf = 0;
+    const animate = () => {
+      raf = requestAnimationFrame(animate);
+      controls.update();
+      renderer.render(scene, camera);
+    };
+    animate();
+  </script>
+</body>
+</html>

@@ -8,3 +8,6 @@ history.json
 *.swp
 *~
 .DS_Store
+
+# Scratch folder the deck builder serves from. Build artifacts, never source.
+_deck/

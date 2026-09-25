@@ -3,7 +3,8 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Token City</title>
+  <link rel="icon" href="./icon.svg" />
+  <title>Afflicted AI</title>
   <style>
     :root[data-theme="light"] { color-scheme: light; --bg: #f4efe5; --panel: rgba(244,239,229,.86); --line: rgba(23,26,26,.18); --line-strong: rgba(23,26,26,.4); --text: #171a1a; --strong: #3c4440; --muted: #757d75; --faint: #8b938c; --track: rgba(23,26,26,.1); --bar: #171a1a; --warn: #a08048; --accent: #5faaa3; }
     :root[data-theme="dark"] { color-scheme: dark; --bg: #14171a; --panel: rgba(20,23,26,.88); --line: rgba(236,231,220,.18); --line-strong: rgba(236,231,220,.45); --text: #ece7dc; --strong: #cdd3cb; --muted: #9aa39e; --faint: #7b827d; --track: rgba(236,231,220,.14); --bar: #ece7dc; --warn: #d2a869; --accent: #6fbcb4; }
@@ -60,11 +61,12 @@
   <main id="app"></main>
 
   <section class="panel hud">
-    <div class="eyebrow">TOKEN CITY / DENSITY MAP</div>
+    <div class="eyebrow">AFFLICTED AI / DENSITY MAP</div>
     <h1>Urban point-cloud districts</h1>
     <p>Terrain → roads → parcels → buildings → trees. Provider usage controls cluster completeness, not box size.</p>
     <div class="btns">
       <button class="btn" id="collectBtn" title="Refresh usage data now">COLLECT + BUILD</button>
+      <button class="btn" id="replayBtn" title="Replay the build animation (B)">REPLAY</button>
       <button class="btn" id="themeBtn" title="Toggle theme (T)">DARK</button>
       <button class="btn" id="resetBtn" title="Reset the camera (R)">RESET VIEW</button>
     </div>
@@ -401,6 +403,10 @@
     collectBtn.addEventListener("click", runCollect);
     themeBtn.addEventListener("click", () => applyTheme(theme === "dark" ? "light" : "dark"));
 
+    // Replay the build animation over the city as it stands. The camera is untouched, so this
+    // is purely a re-enactment of the reveal — nothing is recollected and no data changes.
+    document.querySelector("#replayBtn").addEventListener("click", () => renderer.triggerBuild());
+
     document.querySelector("#legendToggle").addEventListener("click", (e) => {
       groupsEl.classList.toggle("collapsed");
       e.currentTarget.textContent = groupsEl.classList.contains("collapsed") ? "SHOW" : "HIDE";
@@ -416,6 +422,7 @@
       if (e.key === "l" || e.key === "L") document.querySelector("#legendToggle").click();
       if (e.key === "t" || e.key === "T") themeBtn.click();
       if (e.key === "r" || e.key === "R") document.querySelector("#resetBtn").click();
+      if (e.key === "b" || e.key === "B") renderer.triggerBuild();
     });
 
     themeBtn.textContent = theme === "dark" ? "LIGHT" : "DARK";
