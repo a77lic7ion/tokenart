@@ -553,17 +553,30 @@ export function createCityRenderer({
     /** Render flat dot data from a Stipple Forge template */
     setDots(dots, name) {
       // dots: [[x, z, r, g, b, size], ...]
+      // Scale sizes up so stipple dots are visible at TokenArt camera distance
+      const sizeScale = 3.0;
       const points = dots.map(d => ({
         position: [d[0], 0, d[1]],
         color: [d[2], d[3], d[4]],
-        size: d[5] || 1.0,
+        size: (d[5] || 1.0) * sizeScale,
       }));
       // Dispose old city mesh
       if (city) { city.geometry.dispose(); city.material.dispose(); }
       city = createPointCloud(points, geometry, material);
       scene.add(city);
-      recomputeFraming();
-      rebuild({ animate: true });
+      // Don't call rebuild() — it would overwrite our dots with procedural city data
+      if (animate) {
+        revealedCount = 0;
+        building = true;
+        buildStart = performance.now();
+        city.geometry.instanceCount = 0;
+      } else {
+        revealedCount = points.length;
+        building = false;
+        city.geometry.instanceCount = points.length;
+      }
+      pointCount = points.length;
+      fullPointCount = points.length;
     },
     setTheme(name) {
       if (!THEMES[name] || name === state.theme) return;
