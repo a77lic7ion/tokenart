@@ -69,6 +69,7 @@
       <button class="btn" id="replayBtn" title="Replay the build animation (B)">REPLAY</button>
       <button class="btn" id="themeBtn" title="Toggle theme (T)">DARK</button>
       <button class="btn" id="resetBtn" title="Reset the camera (R)">RESET VIEW</button>
+      <button class="btn" id="printBtn" title="Print preview mode (P)">PRINT</button>
       <label class="btn" title="Import a Stipple Forge template JSON">IMPORT<input type="file" accept=".json" style="display:none" id="importInput" /></label>
     </div>
     <div class="count" id="count">Generating point cloud…</div>
@@ -419,6 +420,36 @@
       renderer.controls.update();
     });
 
+    // Print preview mode: orthographic projection, no ripple
+    let printMode = false;
+    let previewName = '';
+    let previewWidth = '?';
+    let previewHeight = '?';
+    let previewEdgeBiased = false;
+    let previewTiling = null;
+    document.getElementById("printBtn").addEventListener("click", () => {
+      printMode = !printMode;
+      if (printMode && previewDots) {
+        renderer.setPrintPreview(previewDots, 254, 169.33, 300);
+        printBtn.textContent = "EXIT PRINT";
+        printBtn.style.color = "var(--accent)";
+        countEl.textContent = `${previewDots.length.toLocaleString()} dots · PRINT PREVIEW`;
+      } else if (previewDots) {
+        renderer.setDots(previewDots, previewName || 'Imported');
+        printBtn.textContent = "PRINT";
+        printBtn.style.color = "";
+        countEl.textContent = `${previewDots.length.toLocaleString()} dots · ${previewWidth || '?'}×${previewHeight || '?'} · edge-biased: ${previewEdgeBiased ? 'yes' : 'no'}`;
+        // Show tiling info if available
+        if (previewTiling) {
+          countEl.textContent += ` · tile: ${previewTiling.cols}×${previewTiling.rows} bleed ${previewTiling.bleedMm}mm`;
+        }
+      } else {
+        printMode = false;
+        printBtn.textContent = "PRINT";
+        printBtn.style.color = "";
+      }
+    });
+
     // Import a Stipple Forge template JSON and render it
     document.getElementById("importInput").addEventListener("change", (e) => {
       const file = e.target.files[0];
@@ -428,7 +459,18 @@
         try {
           const tmpl = JSON.parse(ev.target.result);
           if (!tmpl.dots || !Array.isArray(tmpl.dots)) { alert("Invalid template: no dots array"); return; }
-          renderer.setDots(tmpl.dots, tmpl.name || 'Imported');
+          renderer.setDots(tmpl.dots, tmpl.name || 'Imported', {
+            mode: tmpl.mode || 'mono',
+            edges: tmpl.edges || 'basic',
+            seed: tmpl.seed || '?',
+            stats: tmpl.stats || {},
+            tiling: tmpl.stats?.tiling || null,
+          });
+          previewName = tmpl.name || 'Imported';
+          previewWidth = tmpl.width || '?';
+          previewHeight = tmpl.height || '?';
+          previewEdgeBiased = tmpl.edges === 'silhouette+detail';
+          previewTiling = tmpl.stats?.tiling || null;
           document.title = tmpl.name || 'TokenArt';
           countEl.textContent = `${tmpl.dots.length.toLocaleString()} dots · ${tmpl.width || '?'}×${tmpl.height || '?'} · edge-biased: ${tmpl.edgeBiased ? 'yes' : 'no'}`;
           collectStatus.innerHTML = '<span style="color: var(--accent)">✓ Imported: ' + (tmpl.name || 'template') + ' — ' + tmpl.dots.length.toLocaleString() + ' dots rendered</span>';

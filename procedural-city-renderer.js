@@ -551,7 +551,9 @@ export function createCityRenderer({
       rebuild({ animate: true });
     },
     /** Render flat dot data from a Stipple Forge template */
-    setDots(dots, name) {
+    setDots(dots, name, opts = {}) {
+      // dots: [[x, z, r, g, b, size], ...]
+      // opts: { mode, edges, seed, stats, tiling } — v2 template metadata
       // dots: [[x, z, r, g, b, size], ...]
       // Scale sizes up so stipple dots are visible at TokenArt camera distance
       const sizeScale = 8.0;
@@ -590,6 +592,44 @@ export function createCityRenderer({
       camera.position.set(dist * 0.6, dist * 0.5, dist * 0.6);
       controls.target.set((minX + maxX) / 2, 0, (minZ + maxZ) / 2);
       controls.update();
+    },
+    /** Print-preview mode: orthographic projection, no ripple, physical dimensions */
+    setPrintPreview(dots, widthMm = 254, heightMm = 169.33, dpi = 300) {
+      const points = dots.map(d => ({
+        position: [d[0], 0.0, d[1]],
+        color: [d[2], d[3], d[4]],
+        size: Math.max(0.5, d[5] || 1.0),
+      }));
+      if (city) { city.geometry.dispose(); city.material.dispose(); }
+      city = createPointCloud(points, geometry, material);
+      scene.add(city);
+      // Switch to orthographic camera for print-accurate preview
+      let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+      for (const d of dots) {
+        if (d[0] < minX) minX = d[0]; if (d[0] > maxX) maxX = d[0];
+        if (d[1] < minZ) minZ = d[1]; if (d[1] > maxZ) maxZ = d[1];
+      }
+      const spreadX = maxX - minX || 1;
+      const spreadZ = maxZ - minZ || 1;
+      const maxSpread = Math.max(spreadX, spreadZ);
+      const aspect = widthMm / heightMm;
+      const viewSize = Math.max(maxSpread, 20);
+      camera.left = -viewSize * aspect / 2;
+      camera.right = viewSize * aspect / 2;
+      camera.top = viewSize / 2;
+      camera.bottom = -viewSize / 2;
+      camera.position.set(0, 0, 50);
+      camera.lookAt(0, 0, 0);
+      controls.target.set(0, 0, 0);
+      controls.update();
+      // Disable ripple and animation for print preview
+      pulsing = false;
+      material.uniforms.uPulse.value = 0;
+      revealedCount = points.length;
+      building = false;
+      city.geometry.instanceCount = points.length;
+      pointCount = points.length;
+      fullPointCount = points.length;
     },
     setTheme(name) {
       if (!THEMES[name] || name === state.theme) return;
