@@ -554,11 +554,11 @@ export function createCityRenderer({
     setDots(dots, name) {
       // dots: [[x, z, r, g, b, size], ...]
       // Scale sizes up so stipple dots are visible at TokenArt camera distance
-      const sizeScale = 3.0;
+      const sizeScale = 8.0;
       const points = dots.map(d => ({
-        position: [d[0], 0, d[1]],
+        position: [d[0], 0.1, d[1]],
         color: [d[2], d[3], d[4]],
-        size: (d[5] || 1.0) * sizeScale,
+        size: Math.max(0.5, (d[5] || 1.0) * sizeScale),
       }));
       // Dispose old city mesh
       if (city) { city.geometry.dispose(); city.material.dispose(); }

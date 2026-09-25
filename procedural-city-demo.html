@@ -431,7 +431,7 @@
           renderer.setDots(tmpl.dots, tmpl.name || 'Imported');
           document.title = tmpl.name || 'TokenArt';
           countEl.textContent = `${tmpl.dots.length.toLocaleString()} dots · ${tmpl.width || '?'}×${tmpl.height || '?'} · edge-biased: ${tmpl.edgeBiased ? 'yes' : 'no'}`;
-          collectStatus.innerHTML = '<span style="color: var(--accent)">✓ Imported: ' + (tmpl.name || 'template') + '</span>';
+          collectStatus.innerHTML = '<span style="color: var(--accent)">✓ Imported: ' + (tmpl.name || 'template') + ' — ' + tmpl.dots.length.toLocaleString() + ' dots rendered</span>';
         } catch (err) { alert("Failed to parse template: " + err.message); }
       };
       reader.readAsText(file);
