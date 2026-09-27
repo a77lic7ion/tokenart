@@ -60,8 +60,8 @@ function random(seed) {
   return x - Math.floor(x);
 }
 
-function addPoint(points, x, y, z, color, size = 2) {
-  points.push({ position: [x, y, z], color: color.toArray(), size });
+function addPoint(points, x, y, z, color, size = 2, districtIndex = -1) {
+  points.push({ position: [x, y, z], color: color.toArray ? color.toArray() : color, size, districtIndex });
 }
 
 function createDotGeometry() {
@@ -155,15 +155,18 @@ function createPointCloud(points, geometry, material) {
   const offsets = new Float32Array(points.length * 3);
   const colors = new Float32Array(points.length * 3);
   const sizes = new Float32Array(points.length);
+  const districtIndices = new Float32Array(points.length);
   points.forEach((point, index) => {
     offsets.set(point.position, index * 3);
     colors.set(point.color, index * 3);
     sizes[index] = point.size;
+    districtIndices[index] = point.districtIndex ?? -1;
   });
   mesh.geometry.instanceCount = points.length;
   mesh.geometry.setAttribute("instanceOffset", new THREE.InstancedBufferAttribute(offsets, 3));
   mesh.geometry.setAttribute("instanceColor", new THREE.InstancedBufferAttribute(colors, 3));
   mesh.geometry.setAttribute("instanceSize", new THREE.InstancedBufferAttribute(sizes, 1));
+  mesh.geometry.setAttribute("districtIndex", new THREE.InstancedBufferAttribute(districtIndices, 1));
   mesh.userData.pointCount = points.length;
   return mesh;
 }
@@ -218,7 +221,7 @@ function sampleTerrain(points, config, pal) {
 // so the city can grow UP as well as out. Tier 0 is the original ground level.
 const LEVEL_HEIGHT = 2.4;
 
-function sampleBuildingSurface(points, building, color, seed, baseY = 0) {
+function sampleBuildingSurface(points, building, color, seed, baseY = 0, districtIndex = -1) {
   const { center, footprint, height, completeness, family } = building;
   const baseCount = Math.floor(120 + 440 * completeness);
   const width = footprint.width;
@@ -246,11 +249,11 @@ function sampleBuildingSurface(points, building, color, seed, baseY = 0) {
     if (face === 4) localY = height * edgeBias;
     if (face === 5) localY = 0.05;
     const rotated = rotate(localX, localZ);
-    addPoint(points, rotated.x, baseY + 0.06 + localY, rotated.z, color, 1.15 + random(i + 3) * 1.8);
+    addPoint(points, rotated.x, baseY + 0.06 + localY, rotated.z, color, 1.15 + random(i + 3) * 1.8, districtIndex);
 
     if (family === "tower" && i % 5 === 0) {
       const tower = rotate(localX * 0.25, localZ * 0.25);
-      addPoint(points, tower.x, baseY + 0.08 + height + random(i) * 0.7, tower.z, color, 1.2 + random(i) * 1.3);
+      addPoint(points, tower.x, baseY + 0.08 + height + random(i) * 0.7, tower.z, color, 1.2 + random(i) * 1.3, districtIndex);
     }
     if (family === "dome" && i % 4 === 0) {
       const domeT = random(i * 23 + seed);
@@ -258,17 +261,17 @@ function sampleBuildingSurface(points, building, color, seed, baseY = 0) {
       const angle = random(i * 29 + seed) * Math.PI * 2;
       const domeR = domeRadius * Math.sqrt(domeT);
       const dome = rotate(Math.cos(angle) * domeR, Math.sin(angle) * domeR);
-      addPoint(points, dome.x, baseY + 0.08 + height + Math.sqrt(Math.max(0, domeRadius ** 2 - domeR ** 2)) * 0.6, dome.z, color, 1.3 + random(i) * 1.4);
+      addPoint(points, dome.x, baseY + 0.08 + height + Math.sqrt(Math.max(0, domeRadius ** 2 - domeR ** 2)) * 0.6, dome.z, color, 1.3 + random(i) * 1.4, districtIndex);
     }
   }
 }
 
-function sampleTrees(points, trees, seed, pal, baseY = 0) {
+function sampleTrees(points, trees, seed, pal, baseY = 0, districtIndex = -1) {
   trees.forEach((tree, index) => {
     const trunkCount = Math.max(5, Math.floor(10 * tree.completeness));
     for (let i = 0; i < trunkCount; i++) {
       const t = i / trunkCount;
-      addPoint(points, tree.position.x + (random(i + seed) - 0.5) * 0.06, baseY + 0.05 + t * tree.height, tree.position.z + (random(i * 2 + seed) - 0.5) * 0.06, pal.softInk, 1.1 + random(i) * 1.2);
+      addPoint(points, tree.position.x + (random(i + seed) - 0.5) * 0.06, baseY + 0.05 + t * tree.height, tree.position.z + (random(i * 2 + seed) - 0.5) * 0.06, pal.softInk, 1.1 + random(i) * 1.2, districtIndex);
     }
     const leafCount = Math.floor(18 * tree.completeness);
     for (let i = 0; i < leafCount; i++) {
@@ -280,7 +283,7 @@ function sampleTrees(points, trees, seed, pal, baseY = 0) {
         tree.position.z + Math.sin(angle) * radius,
         pal.ink,
         1.1 + random(i * 2 + seed) * 1.6,
-      );
+        districtIndex);
     }
   });
 }
@@ -374,6 +377,27 @@ export function createCityRenderer({
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   container.appendChild(renderer.domElement);
 
+  let contextLost = false;
+  renderer.domElement.addEventListener("webglcontextlost", (event) => {
+    event.preventDefault();
+    cancelAnimationFrame(raf);
+    contextLost = true;
+  });
+  renderer.domElement.addEventListener("webglcontextrestored", () => {
+    contextLost = false;
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    renderer.setSize(innerWidth, innerHeight);
+    material.uniforms.uResolutionY.value = innerHeight;
+    // GPU resources were freed — recreate geometry, material, and point cloud.
+    if (city) { city.geometry.dispose(); city.material.dispose(); }
+    geometry.dispose();
+    material.dispose();
+    geometry = createDotGeometry();
+    material = createDotMaterial(innerHeight);
+    rebuild({ animate: false });
+    animate();
+  });
+
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
   controls.dampingFactor = 0.07;
@@ -397,8 +421,8 @@ export function createCityRenderer({
   }
   recomputeFraming();
 
-  const geometry = createDotGeometry();
-  const material = createDotMaterial(innerHeight);
+  let geometry = createDotGeometry();
+  let material = createDotMaterial(innerHeight);
 
   // The constant breathing is on by default, but never against the system's wishes: if the user
   // has asked for reduced motion, the wave is simply left at zero.
@@ -461,25 +485,8 @@ export function createCityRenderer({
       const baseY = tier * LEVEL_HEIGHT;
       if (tier > 0) sampleDeck(points, district.project, tier, pal, districtIndex * 137 + 11);
       district.buildings.forEach((building, buildingIndex) =>
-        sampleBuildingSurface(points, building, color, districtIndex * 901 + buildingIndex * 17, baseY));
-      sampleTrees(points, district.trees, districtIndex * 701, pal, baseY);
-
-      // Forge dot data: render stipple dots from Stipple Forge projects
-      if (district.forgeProject && district.project.forgeDots?.dots) {
-        const forge = district.project.forgeDots;
-        const origin = district.project.origin ?? { x: 0, z: 0 };
-        const scale = 28 / Math.max(forge.width, forge.height);
-        for (const dot of forge.dots) {
-          const [dx, dz, r, g, b, sz] = dot;
-          addPoint(points,
-            origin.x + dx * scale,
-            baseY + 0.02,
-            origin.z + dz * scale,
-            [r / 255, g / 255, b / 255],
-            Math.max(0.5, sz * scale * 0.5));
-        }
-      }
-
+        sampleBuildingSurface(points, building, color, districtIndex * 901 + buildingIndex * 17, baseY, districtIndex));
+      sampleTrees(points, district.trees, districtIndex * 701, pal, baseY, districtIndex);
       counts[district.id] = points.length - before;
     });
 

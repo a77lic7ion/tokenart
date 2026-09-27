@@ -117,7 +117,6 @@
       "kind": "project",
       "evidence": "Published Omarchy shell plugins \u2014 repo a77lic7ion/omarchy-plugin-updates",
       "tokenShare": 0.34,
-      "tier": 1,
       "origin": {
         "x": 0,
         "z": 15.5
@@ -144,16 +143,16 @@
       },
       "style": "laboratory",
       "accent": "amber",
-      "evidence": "Mistral API key present in .env — paid tier provider"
+      "evidence": "Mistral API key present in .env \u2014 paid tier provider"
     },
     {
       "id": "elderwatch",
       "name": "ElderWatch",
       "source": "hermes",
       "kind": "project",
-      "evidence": "ElderWatch v2 — AI notification platform",
+      "evidence": "ElderWatch v2 \u2014 AI notification platform",
       "tokenShare": 0.5,
-      "tier": 1,
+      "tier": 0,
       "origin": {
         "x": 12.0,
         "z": 0
@@ -235,14 +234,14 @@
         "threshold": 100000000,
         "action": "size_up",
         "factor": 1.25,
-        "evidence": "Mistral Tower reaches 100000000 tokens — district grows"
+        "evidence": "Mistral Tower reaches 100000000 tokens \u2014 district grows"
       },
       {
         "district": "elderwatch",
         "metric": null,
         "threshold": null,
         "action": "evidence",
-        "evidence": "ElderWatch FCM deployment grows — tier up"
+        "evidence": "ElderWatch FCM deployment grows \u2014 tier up"
       }
     ],
     "expansionRate": 0.25,
