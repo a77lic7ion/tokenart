@@ -1,0 +1,13 @@
+{
+  "run_at": "2026-09-27T21:00:19+00:00",
+  "decisions": [
+    {
+      "district": "elderwatch",
+      "action": "add",
+      "evidence": "Android app with FCM notifications via Supabase — elderwatch-14712 project",
+      "source": "CEO decision (interaction cb47c1b7)",
+      "kind": "project"
+    }
+  ],
+  "district_count": 8
+}
