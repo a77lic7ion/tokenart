@@ -16,7 +16,7 @@ export const PROJECTS = [
     size: { width: 8.2, depth: 8.2 },
     style: "civic",
     accent: "ink",
-    _used: 1741515055,
+    _used: 1747550332,
     _status: "ok",
   },
   {
@@ -27,8 +27,8 @@ export const PROJECTS = [
     size: { width: 8.3, depth: 7.4 },
     style: "laboratory",
     accent: "amber",
-    _used: 0.200010642,
-    _status: "ok",
+    _used: 0,
+    _status: "no_key",
   },
   {
     id: "zai",
@@ -97,7 +97,9 @@ export const PROJECTS = [
     accent: "teal",
     tier: 1,
     kind: "project",
-    evidence: "Android app with FCM notifications via Supabase — elderwatch-14712 project",
+    evidence: "ElderWatch v2 — AI notification platform",
+    _used: 1747550332,
+    _status: "ok",
   },
 ];
 

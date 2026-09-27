@@ -126,6 +126,15 @@
       if (share != null) project.tokenShare = share;
     }
 
+    // Load Forge dot data for districts that reference a Forge project
+    for (const project of projects ?? []) {
+      if (!project.forgeProject) continue;
+      try {
+        const dotsRes = await fetch(`/api/forge/${project.forgeProject}/dots`, { cache: "no-store" });
+        if (dotsRes.ok) project.forgeDots = await dotsRes.json();
+      } catch { /* Forge unavailable — district renders without dot data */ }
+    }
+
     const data = generateCityData(projects ? { projects } : {});
 
     // Deep links: ?theme=dark&only=hermes,openrouter — also what makes the README

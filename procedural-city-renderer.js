@@ -463,6 +463,23 @@ export function createCityRenderer({
       district.buildings.forEach((building, buildingIndex) =>
         sampleBuildingSurface(points, building, color, districtIndex * 901 + buildingIndex * 17, baseY));
       sampleTrees(points, district.trees, districtIndex * 701, pal, baseY);
+
+      // Forge dot data: render stipple dots from Stipple Forge projects
+      if (district.forgeProject && district.project.forgeDots?.dots) {
+        const forge = district.project.forgeDots;
+        const origin = district.project.origin ?? { x: 0, z: 0 };
+        const scale = 28 / Math.max(forge.width, forge.height);
+        for (const dot of forge.dots) {
+          const [dx, dz, r, g, b, sz] = dot;
+          addPoint(points,
+            origin.x + dx * scale,
+            baseY + 0.02,
+            origin.z + dz * scale,
+            [r / 255, g / 255, b / 255],
+            Math.max(0.5, sz * scale * 0.5));
+        }
+      }
+
       counts[district.id] = points.length - before;
     });
 

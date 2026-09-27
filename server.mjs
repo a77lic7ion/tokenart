@@ -12,7 +12,7 @@
  */
 import http from 'node:http';
 import os from 'node:os';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { extname, join, normalize } from 'node:path';
@@ -20,6 +20,7 @@ import { spawn } from 'node:child_process';
 
 const ROOT = process.cwd();
 const PORT = Number(process.env.PORT) || 8221;
+const DIST_DIR = '/home/shaun/stipple-forge/frontend/dist';
 
 // Every IPv4 address this machine actually holds. Explicit, never 0.0.0.0.
 function localAddresses() {
@@ -93,9 +94,32 @@ function runCollect() {
 const handler = async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
 
+  // Serve Stipple Forge frontend from dist/
+  if (url.pathname.startsWith('/stipple')) {
+    const sfPath = url.pathname.replace('/stipple', '') || '/index.html';
+    const filePath = join(DIST_DIR, sfPath);
+    if (existsSync(filePath) && !statSync(filePath).isDirectory()) {
+      const data = await readFile(filePath);
+      const ext = extname(filePath);
+      res.writeHead(200, { 'Content-Type': TYPES[ext] || 'application/octet-stream' });
+      res.end(data);
+      return;
+    }
+    res.writeHead(404).end('Not Found');
+    return;
+  }
   if (url.pathname === '/api/collect' && (req.method === 'GET' || req.method === 'POST')) {
     try {
       const result = await runCollect();
+      // Regenerate procedural-city-data.js from city.json + usage.json
+      try {
+        const { spawn: spawn2 } = await import('node:child_process');
+        const gen = spawn2('python3', ['generate-city-data.py'], { cwd: ROOT, timeout: 30000 });
+        await new Promise((resolve, reject) => {
+          gen.on('close', (code) => { if (code === 0) resolve(); else reject(new Error('gen exited ' + code)); });
+          gen.on('error', reject);
+        });
+      } catch (ge) { console.error('generate-city-data failed:', ge.message); }
       let usage = null;
       try { usage = JSON.parse(await readFile(join(ROOT, 'usage.json'), 'utf8')); } catch { /* ignore */ }
       apiJson(res, 200, {
@@ -113,6 +137,23 @@ const handler = async (req, res) => {
 
   if (url.pathname === '/api/health') {
     apiJson(res, 200, { ok: true, port: PORT, hosts: HOSTS });
+    return;
+  }
+
+  // Forge dot data endpoint: GET /api/forge/:project/dots
+  if (url.pathname.match(/^\/api\/forge\/[^/]+\/dots$/) && req.method === 'GET') {
+    const projectId = url.pathname.split('/')[3];
+    const dotsPath = join('/home/shaun/stipple-forge/projects', projectId, 'dots.json');
+    try {
+      if (!existsSync(dotsPath)) {
+        apiJson(res, 404, { error: `Project ${projectId} has no dots.json` });
+        return;
+      }
+      const data = JSON.parse(await readFile(dotsPath, 'utf8'));
+      apiJson(res, 200, data);
+    } catch (e) {
+      apiJson(res, 500, { error: e.message });
+    }
     return;
   }
 
