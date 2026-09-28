@@ -135,6 +135,21 @@ const handler = async (req, res) => {
     return;
   }
 
+  if (url.pathname === '/api/sessions' && req.method === 'GET') {
+    try {
+      const result = spawnSync(PYTHON, ['query-session.py', '--all'], { cwd: ROOT, timeout: 30000, env: CHILD_ENV });
+      if (result.status !== 0) {
+        apiJson(res, 500, { error: 'Failed to query sessions' });
+        return;
+      }
+      const data = JSON.parse(result.stdout.toString().trim());
+      apiJson(res, 200, data);
+    } catch (e) {
+      apiJson(res, 500, { error: e.message });
+    }
+    return;
+  }
+
   if (url.pathname === '/api/session' && req.method === 'GET') {
     const id = url.searchParams.get('id') || '';
     try {

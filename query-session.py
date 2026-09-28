@@ -98,10 +98,80 @@ def session_to_city(session):
 
 if __name__ == '__main__':
     if len(sys.argv) < 2:
-        print(json.dumps({'error': 'Usage: query-session.py <session_id_or_title>'}))
+        print(json.dumps({'error': 'Usage: query-session.py <session_id_or_title> or --all'}))
         sys.exit(1)
 
     identifier = sys.argv[1]
+
+    if identifier == '--all':
+        # Return all sessions with their model breakdown
+        conn = sqlite3.connect(DB)
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+        c.execute('SELECT * FROM sessions ORDER BY started_at DESC')
+        all_sessions = c.fetchall()
+        conn.close()
+
+        results = []
+        for s in all_sessions:
+            session = dict(s)
+            # Get model breakdown
+            conn2 = sqlite3.connect(DB)
+            conn2.row_factory = sqlite3.Row
+            c2 = conn2.cursor()
+            c2.execute('SELECT model, billing_provider, api_call_count, input_tokens, output_tokens, reasoning_tokens FROM session_model_usage WHERE session_id = ?', (session.get('id'),))
+            model_rows = c2.fetchall()
+            conn2.close()
+
+            models = []
+            seen = {}
+            for m in model_rows:
+                key = m['model']
+                mt = (m['input_tokens'] or 0) + (m['output_tokens'] or 0) + (m['reasoning_tokens'] or 0)
+                if key in seen:
+                    seen[key]['calls'] += m['api_call_count'] or 0
+                    seen[key]['input_tokens'] += m['input_tokens'] or 0
+                    seen[key]['output_tokens'] += m['output_tokens'] or 0
+                    seen[key]['reasoning_tokens'] += m['reasoning_tokens'] or 0
+                    seen[key]['total_tokens'] += mt
+                else:
+                    seen[key] = {
+                        'model': m['model'],
+                        'provider': m['billing_provider'] or 'unknown',
+                        'calls': m['api_call_count'] or 0,
+                        'input_tokens': m['input_tokens'] or 0,
+                        'output_tokens': m['output_tokens'] or 0,
+                        'reasoning_tokens': m['reasoning_tokens'] or 0,
+                        'total_tokens': mt,
+                    }
+            models = list(seen.values())
+            models.sort(key=lambda m: -m['total_tokens'])
+
+            input_t = session.get('input_tokens') or 0
+            output_t = session.get('output_tokens') or 0
+            reasoning_t = session.get('reasoning_tokens') or 0
+            total_t = input_t + output_t + reasoning_t
+            msgs = session.get('message_count') or 0
+            title = session.get('title') or session.get('id', 'unknown')[:20]
+            started = session.get('started_at') or 0
+
+            results.append({
+                'id': session.get('id'),
+                'title': title,
+                'provider': session.get('billing_provider') or 'unknown',
+                'model': session.get('model') or 'unknown',
+                'total_tokens': total_t,
+                'input_tokens': input_t,
+                'output_tokens': output_t,
+                'reasoning_tokens': reasoning_t,
+                'message_count': msgs,
+                'started_at': started,
+                'models': models,
+            })
+
+        print(json.dumps(results, indent=2, default=str))
+        sys.exit(0)
+
     session = find_session(identifier)
     if not session:
         print(json.dumps({'error': f'Session not found: {identifier}'}))
