@@ -388,6 +388,19 @@
       const counts = renderer.districtPointCounts;
       groupsEl.replaceChildren();
 
+      // Group districts by session: kind='session' districts are the groups
+      const sessionDistricts = data.districts.filter(d => d.project.kind === 'session');
+      const modelDistricts = data.districts.filter(d => d.project.kind === 'model');
+
+      // Build a map of session id -> model districts
+      const sessionModels = new Map();
+      for (const md of modelDistricts) {
+        const sessionId = md.project.id.replace(/-model-\d+$/, '');
+        if (!sessionModels.has(sessionId)) sessionModels.set(sessionId, []);
+        sessionModels.get(sessionId).push(md);
+      }
+
+      // SESSIONS group
       const structure = document.createElement("div");
       structure.className = "legend-group";
 
@@ -395,8 +408,7 @@
       shead.className = "group-head";
       const stitle = document.createElement("div");
       stitle.className = "legend-group-title";
-      const firstKind = data.districts[0]?.project?.kind;
-      stitle.textContent = firstKind === 'model' ? "STRUCTURE — ONE DISTRICT PER MODEL" : "STRUCTURE — ONE DISTRICT PER PROVIDER";
+      stitle.textContent = `SESSIONS — ${sessionDistricts.length} session${sessionDistricts.length !== 1 ? 's' : ''}`;
       const sactions = document.createElement("div");
       sactions.className = "group-actions";
       for (const [label, ids, hint] of [
@@ -416,10 +428,13 @@
       shead.append(stitle, sactions);
       structure.append(shead);
 
-      for (const district of data.districts) {
+      // Each session as a collapsible group with a checkbox
+      for (const district of sessionDistricts) {
         const id = district.project.id;
         const on = selected.includes(id);
-        const r = resolved.get(id);
+        const models = sessionModels.get(id) || [];
+        const totalTokens = district.project._used || 0;
+        const msgs = district.project.reference?.detail?.match(/Models: (\d+)/)?.[1] || models.length;
 
         const box = document.createElement("div");
         box.className = "entry" + (on ? "" : " off");
@@ -431,9 +446,13 @@
         cb.type = "checkbox";
         cb.checked = on;
         cb.addEventListener("change", () => {
-          selected = cb.checked
-            ? allIds.filter((x) => x === id || selected.includes(x))
-            : selected.filter((x) => x !== id);
+          // Toggle all models in this session
+          const sessionModelIds = models.map(m => m.project.id);
+          if (cb.checked) {
+            selected = [...new Set([...selected, ...sessionModelIds])];
+          } else {
+            selected = selected.filter(x => !sessionModelIds.includes(x));
+          }
           applyVisibility();
         });
 
@@ -447,39 +466,61 @@
 
         const st = document.createElement("span");
         st.className = "st";
-        st.textContent = band(district.completeness);
+        st.textContent = compact(totalTokens) + " tok";
 
         row.append(cb, sw, nm, st);
         box.append(row);
 
-        const bar = document.createElement("div");
-        bar.className = "bar";
-        const fill = document.createElement("i");
-        fill.style.width = Math.round(Math.max(0, Math.min(1, district.completeness)) * 100) + "%";
-        bar.append(fill);
-        box.append(bar);
+        // Model sub-entries
+        for (const md of models) {
+          const mid = md.project.id;
+          const mon = selected.includes(mid);
+          const mbox = document.createElement("div");
+          mbox.className = "entry sub" + (mon ? "" : " off");
 
-        let meta = "";
-        if (r) {
-          const { mode, share, prov } = r;
-          const shown = fmt(prov.metric, prov.used);
-          if (mode === "of_limit") meta = `<b>${shown}</b> of ${fmt(prov.metric, prov.limit)} · ${(share * 100).toFixed(0)}% of allowance`;
-          else if (mode === "of_reference") meta = `<b>${shown}</b> against a ${fmt(district.project.reference.metric, district.project.reference.full)} reference · ${(share * 100).toFixed(0)}%`;
-          else if (prov.status === "ok") meta = `<b>${shown}</b> · no allowance to measure against`;
-          else if (prov.status === "no_api") meta = `<span class="blind">no API available</span> · renders sparse on purpose`;
-          else if (prov.status === "no_key") meta = `<span class="blind">no key set</span> · ${prov.detail}`;
-          else meta = `<span class="blind">${prov.status}</span> · ${prov.detail ?? ""}`;
+          const mrow = document.createElement("label");
+          mrow.className = "row";
+
+          const mcb = document.createElement("input");
+          mcb.type = "checkbox";
+          mcb.checked = mon;
+          mcb.addEventListener("change", () => {
+            if (mcb.checked) {
+              selected = [...new Set([...selected, mid])];
+            } else {
+              selected = selected.filter(x => x !== mid);
+            }
+            applyVisibility();
+          });
+
+          const msw = document.createElement("span");
+          msw.className = "swatch";
+          msw.style.background = hexes[accentKey(md.project)];
+
+          const nm2 = document.createElement("span");
+          nm2.className = "nm";
+          nm2.textContent = md.project.name;
+
+          const mst = document.createElement("span");
+          mst.className = "st";
+          const mTokens = md.project._used || 0;
+          mst.textContent = compact(mTokens) + " tok";
+
+          mrow.append(mcb, msw, nm2, mst);
+          mbox.append(mrow);
+
+          // Meta with evidence
+          const meta = document.createElement("div");
+          meta.className = "meta";
+          meta.innerHTML = md.project.evidence || "";
+          mbox.append(meta);
+
+          structure.append(mbox);
         }
-        const pts = counts[id] ?? 0;
-        meta += `${meta ? " · " : ""}<b>${pts.toLocaleString()}</b> pts${on ? "" : " · hidden"}`;
-
-        const m = document.createElement("div");
-        m.className = "meta";
-        m.innerHTML = meta;
-        box.append(m);
 
         structure.append(box);
       }
+
       groupsEl.append(structure);
 
       const ground = document.createElement("div");
@@ -563,9 +604,17 @@
       try {
         const res = await fetch("/api/sessions", { cache: 'no-store' });
         if (!res.ok) throw new Error('Failed to fetch sessions');
-        const sessions = await res.json();
-        if (!Array.isArray(sessions) || !sessions.length) {
+        const allSessions = await res.json();
+        if (!Array.isArray(allSessions) || !allSessions.length) {
           throw new Error('No sessions found');
+        }
+        // Filter to user-specified sessions
+        const targetSessions = ['ElderWatch New', '3Dcity', 'JARVIS'];
+        const sessions = allSessions.filter(s =>
+          targetSessions.includes(s.title) || targetSessions.includes(s.id)
+        );
+        if (!sessions.length) {
+          throw new Error('No matching sessions found. Available: ' + allSessions.map(s => s.title).join(', '));
         }
 
         // Cluster layout: all buildings in one tight cluster, sized by token share
