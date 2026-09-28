@@ -617,12 +617,22 @@
           throw new Error('No matching sessions found. Available: ' + allSessions.map(s => s.title).join(', '));
         }
 
-        // Cluster layout: all buildings in one tight cluster, sized by token share
+        // City grid layout: sessions as blocks, models as buildings within blocks
         const modelAccents = ['amber','red','teal','blue','green','purple','coral','ink','soil','softInk'];
         const shortModel = (m) => { const b = m.split('/').pop().replace(/:.*/, ''); return b.length > 20 ? b.slice(0,18)+'…' : b; };
 
+        // City grid: fixed 2 columns, expand rows upward
+        const blockSize = 4;
+        const gap = 2;
+        const maxCols = 2;
+        const cols = Math.min(maxCols, sessions.length);
+        const rows = Math.ceil(sessions.length / maxCols);
+        const totalW = cols * (blockSize + gap) - gap;
+        const totalH = rows * (blockSize + gap) - gap;
+        const offsetX = -(totalW - blockSize) / 2;
+        const offsetZ = -(totalH - blockSize) / 2;
+
         const allProjects = [];
-        let clusterIdx = 0;
 
         sessions.forEach((session, idx) => {
           const models = session.models || [];
@@ -631,18 +641,24 @@
           const title = session.title || session.id?.slice(0,20) || 'unknown';
           const provider = session.provider || 'unknown';
 
-          // Session center — tight spiral within the overall cluster
-          const sAngle = idx * 0.6;
-          const sRadius = idx * 0.3;
-          const cx = Math.cos(sAngle) * sRadius;
-          const cz = Math.sin(sAngle) * sRadius;
+          // Block position in city grid
+          const col = idx % cols;
+          const row = Math.floor(idx / cols);
+          const bx = offsetX + col * (blockSize + gap);
+          const bz = offsetZ + row * (blockSize + gap);
 
-          // Models within this session: each gets a unique color, arranged in a tight circle
+          // Log scale for block size
+          const logTokens = Math.log10(Math.max(totalTokens, 1000));
+          const scale = Math.max(0.5, Math.min(2.5, logTokens / 2.5));
+
+          // Models within this session: each gets a unique color, arranged in a grid within the block
           const modelProjects = models.map((model, mi) => {
-            const mAngle = (mi / Math.max(models.length, 1)) * Math.PI * 2;
-            const mRadius = 0.4; // very tight
-            const mx = cx + Math.cos(mAngle) * mRadius;
-            const mz = cz + Math.sin(mAngle) * mRadius;
+            const mCol = mi % Math.ceil(Math.sqrt(models.length));
+            const mRow = Math.floor(mi / Math.ceil(Math.sqrt(models.length)));
+            const cellW = blockSize / Math.ceil(Math.sqrt(models.length));
+            const cellH = blockSize / Math.ceil(Math.sqrt(models.length));
+            const mx = bx + mCol * cellW + cellW / 2;
+            const mz = bz + mRow * cellH + cellH / 2;
             const mShare = totalTokens > 0 ? model.total_tokens / totalTokens : 0;
             const mScale = Math.max(0.3, 0.5 + mShare * 2);
 
@@ -676,8 +692,8 @@
             accent: modelAccents[idx % modelAccents.length],
             style: 'civic',
             tokenShare: 1,
-            origin: { x: cx, z: cz },
-            size: { width: 1.8 * Math.max(0.5, Math.min(2.0, Math.log10(Math.max(totalTokens, 1000)) / 2.5)), depth: 1.8 * Math.max(0.5, Math.min(2.0, Math.log10(Math.max(totalTokens, 1000)) / 2.5)) },
+            origin: { x: bx + blockSize / 2, z: bz + blockSize / 2 },
+            size: { width: blockSize * scale, depth: blockSize * scale },
             tier: 0,
             kind: 'session',
             evidence: `Session '${title}' — ${totalTokens.toLocaleString()} tokens (${msgs} msgs) via ${provider}`,
