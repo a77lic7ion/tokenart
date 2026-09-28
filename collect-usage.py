@@ -103,6 +103,48 @@ def read_audit() -> dict | None:
     return {"fires": fires, "total_tokens": total, "per_model": per_model}
 
 
+def read_local_tokens() -> dict | None:
+    """Tokens from sessions that went to local Ollama only — zero overlap with any provider account.
+    Also returns total session count as a structural metric (count, not token amount)."""
+    if not STATE_DB.exists():
+        return None
+    con = sqlite3.connect(f"file:{STATE_DB}?mode=ro", uri=True, timeout=5)
+    try:
+        cur = con.cursor()
+        cols = [row[1] for row in cur.execute("PRAGMA table_info(sessions)")]
+        present = [c for c in COUNTERS if c in cols]
+        if not present:
+            return None
+        sums = ", ".join(f"COALESCE(SUM({c}), 0)" for c in present)
+        row = cur.execute(
+            f"SELECT COUNT(*), {sums} FROM sessions WHERE billing_provider = 'ollama-local'"
+        ).fetchone()
+        local_sessions = int(row[0])
+        counters = {c: 0 for c in COUNTERS}
+        for name, value in zip(present, row[1:]):
+            counters[name] = int(value or 0)
+        local_tokens = sum(counters.values())
+        total_sessions = cur.execute("SELECT COUNT(*) FROM sessions").fetchone()[0]
+        return {"tokens": local_tokens, "sessions": local_sessions, "total_sessions": total_sessions}
+    finally:
+        con.close()
+
+
+def count_sessions_by_provider() -> dict[str, int]:
+    """How many sessions were routed through each billing_provider."""
+    if not STATE_DB.exists():
+        return {}
+    con = sqlite3.connect(f"file:{STATE_DB}?mode=ro", uri=True, timeout=5)
+    try:
+        cur = con.cursor()
+        rows = cur.execute(
+            "SELECT IFNULL(billing_provider, '(null)'), COUNT(*) FROM sessions GROUP BY billing_provider"
+        ).fetchall()
+        return {r[0]: r[1] for r in rows}
+    finally:
+        con.close()
+
+
 # ----------------------------------------------------------------------- providers
 
 
@@ -287,15 +329,29 @@ def main() -> int:
     audit = read_audit()
     providers = collect_providers()
 
-    hermes_tokens = (state or {}).get("total_tokens", 0)
+    local_data = read_local_tokens()
+    local_tokens = (local_data or {}).get("tokens", 0)
+    total_sessions = (local_data or {}).get("total_sessions", 0)
+    local_sessions = (local_data or {}).get("sessions", 0)
+    provider_counts = count_sessions_by_provider()
+    nous_count = provider_counts.get("nous", 0)
+
+    hermes_detail = (
+        f"{local_tokens:,} local tokens across {local_sessions} local sessions "
+        f"({total_sessions} total sessions orchestrated)"
+        if local_data else "state.db unavailable"
+    )
+    if nous_count > 0:
+        hermes_detail += f" — flagged: {nous_count} Nous sessions may overlap OpenRouter account-level"
+
     providers.insert(0, {
         "id": "hermes",
         "metric": "tokens",
-        "status": "ok" if state else "unavailable",
-        "used": hermes_tokens,
+        "status": "ok" if local_data else "unavailable",
+        "used": local_tokens,
         "limit": None,
-        "detail": (f"{hermes_tokens:,} tokens across {state['sessions']} sessions"
-                   if state else "state.db unavailable"),
+        "structural_sessions": total_sessions,
+        "detail": hermes_detail,
     })
 
     payload = {
@@ -306,7 +362,7 @@ def main() -> int:
         },
         "state": state,
         "cron": audit,
-        "measured_total_tokens": hermes_tokens + (audit or {}).get("total_tokens", 0),
+        "measured_total_tokens": local_tokens + (audit or {}).get("total_tokens", 0),
         "providers": providers,
         "note": (
             "Provider numbers are measured and account-scoped, so they include usage from ANY "

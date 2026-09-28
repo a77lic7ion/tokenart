@@ -16,7 +16,7 @@ import { existsSync, readFileSync, statSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { extname, join, normalize } from 'node:path';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 
 const ROOT = process.cwd();
 const PORT = Number(process.env.PORT) || 8221;
@@ -135,6 +135,22 @@ const handler = async (req, res) => {
     return;
   }
 
+  if (url.pathname === '/api/session' && req.method === 'GET') {
+    const id = url.searchParams.get('id') || '';
+    try {
+      const result = spawnSync(PYTHON, ['query-session.py', id], { cwd: ROOT, timeout: 15000, env: CHILD_ENV });
+      if (result.status !== 0) {
+        apiJson(res, 404, { error: `Session not found: ${id}` });
+        return;
+      }
+      const data = JSON.parse(result.stdout.toString().trim());
+      apiJson(res, 200, data);
+    } catch (e) {
+      apiJson(res, 500, { error: e.message });
+    }
+    return;
+  }
+
   if (url.pathname === '/api/health') {
     apiJson(res, 200, { ok: true, port: PORT, hosts: HOSTS });
     return;
@@ -169,6 +185,7 @@ const handler = async (req, res) => {
     res.writeHead(200, {
       'Content-Type': TYPES[extname(fullPath)] || 'application/octet-stream',
       'Access-Control-Allow-Origin': '*',
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
     });
     res.end(data);
   } catch {

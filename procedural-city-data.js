@@ -16,7 +16,8 @@ export const PROJECTS = [
     size: { width: 8.2, depth: 8.2 },
     style: "civic",
     accent: "ink",
-    _used: 1850296230,
+    provider: "hermes",
+    _used: 62005574,
     _status: "ok",
   },
   {
@@ -27,6 +28,7 @@ export const PROJECTS = [
     size: { width: 8.3, depth: 7.4 },
     style: "laboratory",
     accent: "amber",
+    provider: "openrouter",
     _used: 0.200010642,
     _status: "ok",
   },
@@ -37,7 +39,8 @@ export const PROJECTS = [
     origin: { x: 8.5, z: 7.8 },
     size: { width: 8.0, depth: 6.7 },
     style: "industrial",
-    accent: "amber",
+    accent: "teal",
+    provider: "zai",
     _used: 0,
     _status: "no_key",
   },
@@ -48,7 +51,8 @@ export const PROJECTS = [
     origin: { x: -8.4, z: -7.1 },
     size: { width: 8.8, depth: 7.2 },
     style: "residential",
-    accent: "ink",
+    accent: "red",
+    provider: "opencode",
     _used: 0,
     _status: "no_key",
   },
@@ -59,7 +63,8 @@ export const PROJECTS = [
     origin: { x: -8.5, z: 7.8 },
     size: { width: 8.5, depth: 6.6 },
     style: "archive",
-    accent: "teal",
+    accent: "green",
+    provider: "gemini",
     _used: 0,
     _status: "no_api",
   },
@@ -70,7 +75,8 @@ export const PROJECTS = [
     origin: { x: 0, z: 15.5 },
     size: { width: 9.0, depth: 7.0 },
     style: "industrial",
-    accent: "amber",
+    accent: "blue",
+    provider: "openrouter",
     kind: "project",
     evidence: "Published Omarchy shell plugins — repo a77lic7ion/omarchy-plugin-updates",
   },
@@ -81,7 +87,8 @@ export const PROJECTS = [
     origin: { x: -0.0, z: -25.5 },
     size: { width: 8.0, depth: 6.7 },
     style: "laboratory",
-    accent: "amber",
+    accent: "purple",
+    provider: "mistral",
     evidence: "Mistral API key present in .env — paid tier provider",
     _used: 0,
     _status: "no_key",
@@ -93,10 +100,11 @@ export const PROJECTS = [
     origin: { x: 12.0, z: 0 },
     size: { width: 9.5, depth: 7.5 },
     style: "civic",
-    accent: "teal",
+    accent: "coral",
+    provider: "openrouter",
     kind: "project",
     evidence: "ElderWatch v2 — AI notification platform",
-    _used: 1850296230,
+    _used: 62005574,
     _status: "ok",
   },
 ];
@@ -150,6 +158,27 @@ export function generateRoadNetwork(projects = PROJECTS, config = CITY_CONFIG) {
       roads.push(createRoad({ kind: "lane", from: { x, z: district.minZ }, to: { x: x + rng.float(-0.25, 0.25), z: district.maxZ }, width: 0.14, districtId: project.id, depth: 1 }));
     }
   });
+  // Session-driven roads: Hermes connects to districts based on which providers its sessions touched.
+  const sessions = config.hermes_sessions;
+  if (sessions) {
+    const hermes = projects.find(p => p.id === "hermes");
+    if (hermes) {
+      const providerToDistrict = { "nous": "openrouter", "opencode-free": "opencode" };
+      for (const [provider, count] of Object.entries(sessions)) {
+        const targetId = providerToDistrict[provider];
+        if (!targetId) continue;
+        const target = projects.find(p => p.id === targetId);
+        if (!target) continue;
+        const width = count > 50 ? 0.35 : count >= 5 ? 0.2 : 0.1;
+        roads.push(createRoad({
+          kind: count > 50 ? "boulevard" : "lane",
+          from: { x: hermes.origin.x, z: hermes.origin.z },
+          to: { x: target.origin.x, z: target.origin.z },
+          width, districtId: "hermes", depth: 0,
+        }));
+      }
+    }
+  }
   return roads;
 }
 

@@ -20,8 +20,10 @@
       "name": "Hermes Core",
       "source": "hermes",
       "reference": {
-        "metric": "tokens",
-        "full": 1000000000
+        "metric": "local_tokens_plus_sessions",
+        "full": 62005574,
+        "structural_sessions": 124,
+        "detail": "Local Ollama tokens only (62M from 2 local sessions). 124 total sessions orchestrated. Nous-routed tokens excluded (overlap OpenRouter account). Flagged: Nous routing not distinguished in session log."
       },
       "tokenShare": 1,
       "origin": {
@@ -33,7 +35,8 @@
         "depth": 8.2
       },
       "style": "civic",
-      "accent": "ink"
+      "accent": "ink",
+      "provider": "hermes"
     },
     {
       "id": "openrouter",
@@ -53,7 +56,8 @@
         "depth": 7.4
       },
       "style": "laboratory",
-      "accent": "amber"
+      "accent": "amber",
+      "provider": "openrouter"
     },
     {
       "id": "zai",
@@ -73,7 +77,8 @@
         "depth": 6.7
       },
       "style": "industrial",
-      "accent": "amber"
+      "accent": "teal",
+      "provider": "zai"
     },
     {
       "id": "opencode",
@@ -93,7 +98,8 @@
         "depth": 7.2
       },
       "style": "residential",
-      "accent": "ink"
+      "accent": "red",
+      "provider": "opencode"
     },
     {
       "id": "gemini",
@@ -109,7 +115,8 @@
         "depth": 6.6
       },
       "style": "archive",
-      "accent": "teal"
+      "accent": "green",
+      "provider": "gemini"
     },
     {
       "id": "plugin-foundry",
@@ -126,7 +133,8 @@
         "depth": 7.0
       },
       "style": "industrial",
-      "accent": "amber"
+      "accent": "blue",
+      "provider": "openrouter"
     },
     {
       "id": "mistral",
@@ -142,8 +150,9 @@
         "depth": 6.7
       },
       "style": "laboratory",
-      "accent": "amber",
-      "evidence": "Mistral API key present in .env \u2014 paid tier provider"
+      "accent": "purple",
+      "evidence": "Mistral API key present in .env \u2014 paid tier provider",
+      "provider": "mistral"
     },
     {
       "id": "elderwatch",
@@ -162,7 +171,8 @@
         "depth": 7.5
       },
       "style": "civic",
-      "accent": "teal"
+      "accent": "coral",
+      "provider": "openrouter"
     }
   ],
   "growth": {
@@ -171,17 +181,17 @@
       {
         "district": "hermes",
         "metric": "tokens",
-        "threshold": 2000000000,
+        "threshold": 100000000,
         "action": "size_up",
         "factor": 1.25,
-        "evidence": "Hermes token usage crosses 2B"
+        "evidence": "Hermes local tokens cross 100M"
       },
       {
         "district": "hermes",
         "metric": "tokens",
-        "threshold": 4000000000,
+        "threshold": 500000000,
         "action": "tier_up",
-        "evidence": "Hermes crosses 4B \u2014 city grows upward"
+        "evidence": "Hermes local tokens cross 500M \u2014 city grows upward"
       },
       {
         "district": "openrouter",
@@ -258,5 +268,12 @@
       "tierThreshold": "usage multiplier for tier promotion",
       "growthBurstDelta": "daily token delta as fraction of reference triggers burst animation"
     }
+  },
+  "hermes_sessions": {
+    "nous": 108,
+    "ollama-local": 2,
+    "opencode-free": 1,
+    "custom": 1,
+    "(null)": 12
   }
 }

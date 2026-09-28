@@ -14,12 +14,12 @@ export const THEMES = {
     background: "#f4efe5",
     ground: "#f4efe5",
     // 'ripple' is the colour a dot shifts toward as the travelling wave passes over it.
-    palette: { ink: "#171a1a", softInk: "#394341", soil: "#7b8178", teal: "#5faaa3", amber: "#c49a5e", ripple: "#a9551f" },
+    palette: { ink: "#171a1a", softInk: "#394341", soil: "#7b8178", teal: "#5faaa3", amber: "#c49a5e", red: "#c45a5a", green: "#5a8a5a", blue: "#5a5ac4", purple: "#8a5ac4", coral: "#c45a8a", ripple: "#a9551f" },
   },
   dark: {
     background: "#14171a",
     ground: "#14171a",
-    palette: { ink: "#ece7dc", softInk: "#9aa39e", soil: "#6f7772", teal: "#6fbcb4", amber: "#d2a869", ripple: "#ffd9a0" },
+    palette: { ink: "#ece7dc", softInk: "#9aa39e", soil: "#6f7772", teal: "#6fbcb4", amber: "#d2a869", red: "#e07070", green: "#70b070", blue: "#7070e0", purple: "#a070e0", coral: "#e070a0", ripple: "#ffd9a0" },
   },
 };
 
@@ -44,7 +44,8 @@ export function legendHex(name) {
 
 // Maps a project's accent to the colour key actually used when rendering.
 export function accentKey(project) {
-  return project.accent === "amber" ? "amber" : project.accent === "teal" ? "teal" : "ink";
+  const valid = new Set(["ink","softInk","soil","teal","amber","red","green","blue","purple","coral"]);
+  return valid.has(project.accent) ? project.accent : "ink";
 }
 
 function paletteFor(name) {

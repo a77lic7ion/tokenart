@@ -136,17 +136,106 @@
       } catch { /* Forge unavailable — district renders without dot data */ }
     }
 
-    const data = generateCityData(projects ? { projects } : {});
+    // --- Blank start + session import ---
+    const hudCount = document.getElementById('count');
+    const hudStatus = document.getElementById('collectStatus');
 
-    // Deep links: ?theme=dark&only=hermes,openrouter — also what makes the README
-    // screenshots reproducible. A query param overrides this load only and is never written
-    // back to storage, so it can't clobber a saved preference.
+    // Add import UI to the HUD buttons
+    const importLabel = document.createElement('label');
+    importLabel.className = 'btn';
+    importLabel.title = 'Import a Hermes session by ID or title';
+    importLabel.innerHTML = 'IMPORT SESSION<input type="text" id="sessionInput" placeholder="session id or title" style="width:160px;font-family:inherit;font-size:9px;background:transparent;border:1px solid var(--line);color:var(--text);padding:2px 4px;outline:none;" />';
+    document.querySelector('.btns').appendChild(importLabel);
+
+    const sessionInput = document.getElementById('sessionInput');
+    const importBtn = importLabel;
+
+    async function importSession(identifier) {
+      if (!identifier) return;
+      hudCount.textContent = 'Importing session…';
+      hudStatus.textContent = '';
+      try {
+        const res = await fetch(`/api/session?id=${encodeURIComponent(identifier)}`, { cache: 'no-store' });
+        if (!res.ok) throw new Error('Session not found');
+        const session = await res.json();
+        if (session.error) throw new Error(session.error);
+        const sessionProject = {
+          id: session.id,
+          name: session.name,
+          title: session.title,
+          provider: session.provider,
+          model: session.model,
+          accent: accentForProvider(session.provider),
+          style: 'civic',
+          tokenShare: 1,
+          origin: { x: 0, z: 0 },
+          size: { width: 4 * session.scale, depth: 4 * session.scale },
+          tier: 0,
+          kind: 'session',
+          evidence: session.evidence,
+          reference: session.reference,
+          _used: session.total_tokens,
+          _status: 'ok',
+        };
+        const sessionCityDoc = { projects: [sessionProject], hermes_sessions: null };
+        const sessionUsage = { providers: [{ id: session.provider, used: session.total_tokens, status: 'ok', limit: null }] };
+        const provMap = new Map(sessionUsage.providers.map(p => [p.id, p]));
+        for (const proj of sessionCityDoc.projects) {
+          const prov = provMap.get(proj.provider || proj.source);
+          if (prov && prov.used != null) {
+            proj.tokenShare = prov.limit ? Math.min(1, prov.used / prov.limit) : 1;
+          }
+        }
+        const newData = generateCityData({ projects: sessionCityDoc.projects, hermes_sessions: null });
+        // Update outer scope so legend/paint can see it
+        data = newData;
+        allIds = newData.districts.map(d => d.project.id);
+        selected = [sessionProject.id];
+        renderer.setCityData(data);
+        paintLegend();
+        paintCount();
+        hudCount.textContent = `${session.total_tokens.toLocaleString()} tokens · ${session.message_count} msgs · ${session.model}`;
+        hudStatus.textContent = `Imported: ${session.title} (${session.provider})`;
+      } catch (e) {
+        hudCount.textContent = 'Import failed';
+        hudStatus.textContent = e.message;
+      }
+    }
+
+    function accentForProvider(provider) {
+      const map = { nous: 'amber', openrouter: 'red', zai: 'teal', opencode: 'blue', gemini: 'green', mistral: 'purple', custom: 'coral' };
+      return map[provider] || 'ink';
+    }
+
+    importBtn.addEventListener('click', () => {
+      const val = sessionInput.value.trim();
+      if (val) importSession(val);
+    });
+    sessionInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        const val = sessionInput.value.trim();
+        if (val) importSession(val);
+      }
+    });
+
+    // Start blank — no city loaded yet
+    hudCount.textContent = 'Blank canvas — enter a session ID or title above';
+    hudStatus.textContent = 'Tip: try "3Dcity" or "20260924_002115_c4675727"';
+
+    // Also keep the normal COLLECT+BUILD flow
+    document.getElementById('collectBtn').addEventListener('click', async () => {
+      // ... existing collect logic ...
+    });
+
+    // Start with an empty city — data gets populated when a session is imported
+    let data = generateCityData({ projects: [], hermes_sessions: null });
+
+    // Deep links: ?theme=dark&only=hermes,openrouter
     const query = new URLSearchParams(location.search);
-
     let theme = query.get("theme") ?? store.get(STORE.theme, "light");
     if (!THEME_NAMES.includes(theme)) theme = "light";
 
-    const allIds = data.districts.map((d) => d.project.id);
+    let allIds = data.districts.map((d) => d.project.id);
     const queryOnly = query.get("only");
     let selected = queryOnly
       ? allIds.filter((id) => queryOnly.split(",").includes(id))
@@ -205,7 +294,7 @@
       if (best) {
         if (currentDistrict !== best.project.id) {
           currentDistrict = best.project.id;
-          tooltip.textContent = best.project.name;
+          tooltip.textContent = best.project.name + " — " + (best.project.provider || "");
           tooltip.style.display = "block";
         }
         tooltip.style.left = (e.clientX + 14) + "px";
@@ -244,7 +333,7 @@
         }
       });
       if (best) {
-        tooltip.textContent = best.project.name;
+        tooltip.textContent = best.project.name + " — " + (best.project.provider || "");
         tooltip.style.display = "block";
         tooltip.style.left = (e.clientX + 14) + "px";
         tooltip.style.top = (e.clientY - 10) + "px";
@@ -486,7 +575,7 @@
           }
           // Rebuild from the new data. setCityData() keeps the camera and replays the build,
           // instead of disposing the renderer and recreating it.
-          const fresh = generateCityData(projects ? { projects } : {});
+          const fresh = generateCityData({ projects, hermes_sessions: cityDoc?.hermes_sessions ?? null });
           data.districts = fresh.districts;
           data.roads = fresh.roads;
           data.config = fresh.config;
