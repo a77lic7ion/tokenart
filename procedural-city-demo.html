@@ -69,8 +69,6 @@
       <button class="btn" id="replayBtn" title="Replay the build animation (B)">REPLAY</button>
       <button class="btn" id="themeBtn" title="Toggle theme (T)">DARK</button>
       <button class="btn" id="resetBtn" title="Reset the camera (R)">RESET VIEW</button>
-      <button class="btn" id="printBtn" title="Print preview mode (P)">PRINT</button>
-      <label class="btn" title="Import a Stipple Forge template JSON">IMPORT<input type="file" accept=".json" style="display:none" id="importInput" /></label>
     </div>
     <div class="count" id="count">Generating point cloud…</div>
     <div class="collect-status" id="collectStatus"></div>
@@ -140,100 +138,7 @@
     const hudCount = document.getElementById('count');
     const hudStatus = document.getElementById('collectStatus');
 
-    // Add import UI to the HUD buttons
-    const importLabel = document.createElement('label');
-    importLabel.className = 'btn';
-    importLabel.title = 'Import a Hermes session by ID or title';
-    importLabel.innerHTML = 'IMPORT SESSION<input type="text" id="sessionInput" placeholder="session id or title" style="width:160px;font-family:inherit;font-size:9px;background:transparent;border:1px solid var(--line);color:var(--text);padding:2px 4px;outline:none;" />';
-    document.querySelector('.btns').appendChild(importLabel);
 
-    const sessionInput = document.getElementById('sessionInput');
-    const importBtn = importLabel;
-
-    async function importSession(identifier) {
-      if (!identifier) return;
-      hudCount.textContent = 'Importing session…';
-      hudStatus.textContent = '';
-      try {
-        const res = await fetch(`/api/session?id=${encodeURIComponent(identifier)}`, { cache: 'no-store' });
-        if (!res.ok) throw new Error('Session not found');
-        const session = await res.json();
-        if (session.error) throw new Error(session.error);
-
-        const models = session.models || [];
-        const modelCount = models.length;
-        const radius = Math.max(3, modelCount * 1.8);
-        const modelAccents = ['amber','red','teal','blue','green','purple','coral','ink','soil','softInk'];
-
-        // Shorten model name for legend: keep last segment after '/', strip :version
-        const shortModel = (m) => {
-          const base = m.split('/').pop().replace(/:.*/, '');
-          return base.length > 22 ? base.slice(0, 20) + '…' : base;
-        };
-
-        // Create a district for each unique model in the session
-        const sessionProjects = models.map((model, i) => {
-          const angle = (i / modelCount) * Math.PI * 2;
-          const x = Math.cos(angle) * radius;
-          const z = Math.sin(angle) * radius;
-          const tokenShare = session.total_tokens > 0 ? model.total_tokens / session.total_tokens : 0;
-          const scale = Math.max(0.5, 1 + tokenShare * 2.5);
-
-          return {
-            id: `${session.id}-model-${i}`,
-            name: shortModel(model.model),
-            title: session.title,
-            provider: model.provider,
-            model: model.model,
-            accent: modelAccents[i % modelAccents.length],
-            style: 'civic',
-            tokenShare: Math.max(0.1, tokenShare),
-            origin: { x, z },
-            size: { width: 3 * scale, depth: 3 * scale },
-            tier: 0,
-            kind: 'model',
-            evidence: `${model.model} — ${model.total_tokens.toLocaleString()} tokens (${model.calls} calls) via ${model.provider}`,
-            reference: {
-              metric: 'model_tokens',
-              full: model.total_tokens,
-              detail: `In: ${model.input_tokens.toLocaleString()} · Out: ${model.output_tokens.toLocaleString()} · Reas: ${model.reasoning_tokens.toLocaleString()}`
-            },
-            _used: model.total_tokens,
-            _status: 'ok',
-          };
-        });
-
-        const newData = generateCityData({ projects: sessionProjects, hermes_sessions: null });
-        data = newData;
-        allIds = newData.districts.map(d => d.project.id);
-        selected = allIds.slice();
-        renderer.setCityData(data);
-        paintLegend();
-        paintCount();
-        hudCount.textContent = `${session.total_tokens.toLocaleString()} tokens · ${session.message_count} msgs · ${modelCount} models`;
-        hudStatus.textContent = `Imported: ${session.title} (${session.provider})`;
-      } catch (e) {
-        hudCount.textContent = 'Import failed';
-        hudStatus.textContent = e.message;
-      }
-    }
-
-
-
-    importBtn.addEventListener('click', () => {
-      const val = sessionInput.value.trim();
-      if (val) importSession(val);
-    });
-    sessionInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
-        const val = sessionInput.value.trim();
-        if (val) importSession(val);
-      }
-    });
-
-    // Start blank — no city loaded yet
-    hudCount.textContent = 'Blank canvas — enter a session ID or title above';
-    hudStatus.textContent = 'Tip: try "3Dcity" or "20260924_002115_c4675727"';
 
     // Also keep the normal COLLECT+BUILD flow
     document.getElementById('collectBtn').addEventListener('click', async () => {
@@ -330,7 +235,7 @@
       }
     });
 
-    // Tap (click) for mobile: show the district name briefly, then auto-hide
+    // Tap (click) for mobile: show the session info briefly, then auto-hide
     document.querySelector("canvas").addEventListener("click", (e) => {
       const rect = renderer.renderer.domElement.getBoundingClientRect();
       mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
@@ -346,12 +251,16 @@
         }
       });
       if (best) {
-        tooltip.textContent = best.project.name + " — " + (best.project.provider || "");
+        const p = best.project;
+        const sessionTitle = p.title || p.name;
+        const modelName = p.kind === 'model' ? p.model || p.name : '';
+        const tokens = p._used != null ? compact(p._used) + ' tok' : '';
+        tooltip.textContent = modelName ? `${sessionTitle} — ${modelName} — ${tokens}` : `${sessionTitle} — ${tokens}`;
         tooltip.style.display = "block";
         tooltip.style.left = (e.clientX + 14) + "px";
         tooltip.style.top = (e.clientY - 10) + "px";
         clearTimeout(tooltip._hide);
-        tooltip._hide = setTimeout(() => { tooltip.style.display = "none"; }, 2000);
+        tooltip._hide = setTimeout(() => { tooltip.style.display = "none"; }, 2500);
       }
     });
 
