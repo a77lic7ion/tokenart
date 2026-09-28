@@ -32,6 +32,38 @@ def session_to_city(session):
     title = session.get('title') or session.get('id', 'unknown')[:20]
     started = session.get('started_at') or 0
 
+    # Per-model breakdown from session_model_usage
+    conn = sqlite3.connect(DB)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    c.execute('SELECT model, billing_provider, api_call_count, input_tokens, output_tokens, reasoning_tokens FROM session_model_usage WHERE session_id = ?', (session.get('id'),))
+    model_rows = c.fetchall()
+    conn.close()
+
+    models = []
+    seen = {}
+    for m in model_rows:
+        key = m['model']
+        mt = (m['input_tokens'] or 0) + (m['output_tokens'] or 0) + (m['reasoning_tokens'] or 0)
+        if key in seen:
+            seen[key]['calls'] += m['api_call_count'] or 0
+            seen[key]['input_tokens'] += m['input_tokens'] or 0
+            seen[key]['output_tokens'] += m['output_tokens'] or 0
+            seen[key]['reasoning_tokens'] += m['reasoning_tokens'] or 0
+            seen[key]['total_tokens'] += mt
+        else:
+            seen[key] = {
+                'model': m['model'],
+                'provider': m['billing_provider'] or 'unknown',
+                'calls': m['api_call_count'] or 0,
+                'input_tokens': m['input_tokens'] or 0,
+                'output_tokens': m['output_tokens'] or 0,
+                'reasoning_tokens': m['reasoning_tokens'] or 0,
+                'total_tokens': mt,
+            }
+    models = list(seen.values())
+    models.sort(key=lambda m: -m['total_tokens'])
+
     # Map provider to a district-like project entry
     district_id = f"session-{provider}"
     district_name = f"{provider.title()} Session"
@@ -55,6 +87,7 @@ def session_to_city(session):
         'message_count': msgs,
         'started_at': started,
         'scale': round(scale, 2),
+        'models': models,
         'evidence': f"Session '{title}' — {total_t:,} tokens ({msgs} msgs) via {provider}",
         'reference': {
             'metric': 'session_tokens',

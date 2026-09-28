@@ -159,42 +159,58 @@
         if (!res.ok) throw new Error('Session not found');
         const session = await res.json();
         if (session.error) throw new Error(session.error);
-        const sessionProject = {
-          id: session.id,
-          name: session.name,
-          title: session.title,
-          provider: session.provider,
-          model: session.model,
-          accent: accentForProvider(session.provider),
-          style: 'civic',
-          tokenShare: 1,
-          origin: { x: 0, z: 0 },
-          size: { width: 4 * session.scale, depth: 4 * session.scale },
-          tier: 0,
-          kind: 'session',
-          evidence: session.evidence,
-          reference: session.reference,
-          _used: session.total_tokens,
-          _status: 'ok',
+
+        const models = session.models || [];
+        const modelCount = models.length;
+        const radius = Math.max(3, modelCount * 1.8);
+        const modelAccents = ['amber','red','teal','blue','green','purple','coral','ink','soil','softInk'];
+
+        // Shorten model name for legend: keep last segment after '/', strip :version
+        const shortModel = (m) => {
+          const base = m.split('/').pop().replace(/:.*/, '');
+          return base.length > 22 ? base.slice(0, 20) + '…' : base;
         };
-        const sessionCityDoc = { projects: [sessionProject], hermes_sessions: null };
-        const sessionUsage = { providers: [{ id: session.provider, used: session.total_tokens, status: 'ok', limit: null }] };
-        const provMap = new Map(sessionUsage.providers.map(p => [p.id, p]));
-        for (const proj of sessionCityDoc.projects) {
-          const prov = provMap.get(proj.provider || proj.source);
-          if (prov && prov.used != null) {
-            proj.tokenShare = prov.limit ? Math.min(1, prov.used / prov.limit) : 1;
-          }
-        }
-        const newData = generateCityData({ projects: sessionCityDoc.projects, hermes_sessions: null });
-        // Update outer scope so legend/paint can see it
+
+        // Create a district for each unique model in the session
+        const sessionProjects = models.map((model, i) => {
+          const angle = (i / modelCount) * Math.PI * 2;
+          const x = Math.cos(angle) * radius;
+          const z = Math.sin(angle) * radius;
+          const tokenShare = session.total_tokens > 0 ? model.total_tokens / session.total_tokens : 0;
+          const scale = Math.max(0.5, 1 + tokenShare * 2.5);
+
+          return {
+            id: `${session.id}-model-${i}`,
+            name: shortModel(model.model),
+            title: session.title,
+            provider: model.provider,
+            model: model.model,
+            accent: modelAccents[i % modelAccents.length],
+            style: 'civic',
+            tokenShare: Math.max(0.1, tokenShare),
+            origin: { x, z },
+            size: { width: 3 * scale, depth: 3 * scale },
+            tier: 0,
+            kind: 'model',
+            evidence: `${model.model} — ${model.total_tokens.toLocaleString()} tokens (${model.calls} calls) via ${model.provider}`,
+            reference: {
+              metric: 'model_tokens',
+              full: model.total_tokens,
+              detail: `In: ${model.input_tokens.toLocaleString()} · Out: ${model.output_tokens.toLocaleString()} · Reas: ${model.reasoning_tokens.toLocaleString()}`
+            },
+            _used: model.total_tokens,
+            _status: 'ok',
+          };
+        });
+
+        const newData = generateCityData({ projects: sessionProjects, hermes_sessions: null });
         data = newData;
         allIds = newData.districts.map(d => d.project.id);
-        selected = [sessionProject.id];
+        selected = allIds.slice();
         renderer.setCityData(data);
         paintLegend();
         paintCount();
-        hudCount.textContent = `${session.total_tokens.toLocaleString()} tokens · ${session.message_count} msgs · ${session.model}`;
+        hudCount.textContent = `${session.total_tokens.toLocaleString()} tokens · ${session.message_count} msgs · ${modelCount} models`;
         hudStatus.textContent = `Imported: ${session.title} (${session.provider})`;
       } catch (e) {
         hudCount.textContent = 'Import failed';
@@ -202,10 +218,7 @@
       }
     }
 
-    function accentForProvider(provider) {
-      const map = { nous: 'amber', openrouter: 'red', zai: 'teal', opencode: 'blue', gemini: 'green', mistral: 'purple', custom: 'coral' };
-      return map[provider] || 'ink';
-    }
+
 
     importBtn.addEventListener('click', () => {
       const val = sessionInput.value.trim();
@@ -382,7 +395,8 @@
       shead.className = "group-head";
       const stitle = document.createElement("div");
       stitle.className = "legend-group-title";
-      stitle.textContent = "STRUCTURE — ONE DISTRICT PER PROVIDER";
+      const firstKind = data.districts[0]?.project?.kind;
+      stitle.textContent = firstKind === 'model' ? "STRUCTURE — ONE DISTRICT PER MODEL" : "STRUCTURE — ONE DISTRICT PER PROVIDER";
       const sactions = document.createElement("div");
       sactions.className = "group-actions";
       for (const [label, ids, hint] of [
